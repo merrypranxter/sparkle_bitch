@@ -96,6 +96,11 @@ const tb = tdec.frames[0].data;
 assert(tb[3] < 8, 'transparent GIF: corner background is see-through (alpha ' + tb[3] + ')');
 const sqPix = (14 * tw + 10) * 4;
 assert(tb[sqPix + 3] > 200, 'transparent GIF: foreground stays opaque (alpha ' + tb[sqPix + 3] + ')');
+// the moving square must NOT leave trails (disposal=2 clears each frame)
+function opaqueCount(d) { let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) n++; return n; }
+const counts = tdec.frames.map(f => opaqueCount(f.data));
+assert(counts.every(c => c >= 120 && c <= 180), 'transparent GIF: one square per frame, no trails (' + counts.join(',') + ')');
+assert(counts[2] <= counts[0] + 20, 'transparent GIF: opaque pixels do not accumulate (' + counts.join(',') + ')');
 
 console.log(failures === 0 ? '\nCODEC OK' : '\nCODEC FAILED (' + failures + ')');
 process.exit(failures === 0 ? 0 : 1);

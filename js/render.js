@@ -59,7 +59,11 @@
     GL.drawGlitter(lc, field, phase01, { w: W, h: H, base: true, still: still });
     lc.globalCompositeOperation = 'destination-in';
     lc.drawImage(tr.maskCanvas, 0, 0, W, H);
+    // honour the Glitter strength slider (params.glitterIntensity)
+    ctx.save();
+    ctx.globalAlpha = U.clamp(params.glitterIntensity != null ? params.glitterIntensity : 1, 0, 1);
     ctx.drawImage(lay, 0, 0);
+    ctx.restore();
   }
 
   // ---- glitter overlay on an image -------------------------------------

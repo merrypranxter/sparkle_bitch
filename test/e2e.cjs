@@ -232,6 +232,45 @@ async function poll(page, fn, timeout, label) {
     ok(gfill.on === true, 'image: glitter fill toggles on');
     ok(gfill.bright > 300, 'image: glitter lays flakes over the photo (' + gfill.bright + ' bright px)');
 
+    // ---- FIX: glitter strength affects text output ----
+    // (shadow/outline off so the fill's own opacity — driven by the slider — is
+    // what's measured; otherwise the shadow floors the interior alpha.)
+    const strength = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      SBM.setMode('text'); SBM.setText({ text: 'AB', size: 120, shadow: false, outline: 0 });
+      SBM.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });
+      function opaque(cv) { var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = 0; for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) n++; return n; }
+      var hi = opaque(SBM.renderStillCanvas());
+      SBM.setGlitter({ glitterIntensity: 0.25 });
+      var lo = opaque(SBM.renderStillCanvas());
+      return { hi: hi, lo: lo };
+    });
+    ok(strength.hi > strength.lo * 1.8, 'fix: glitter strength changes text output (' + strength.hi + ' -> ' + strength.lo + ')');
+
+    // ---- FIX: switching modes preserves the image + never crashes painting ----
+    await page.evaluate(async () => {
+      var W = 200, H = 140, c = document.createElement('canvas'); c.width = W; c.height = H;
+      c.getContext('2d').fillStyle = '#123'; c.getContext('2d').fillRect(0, 0, W, H);
+      var blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      window.SparkleBitch.openFile(new File([blob], 'keep.png', { type: 'image/png' }));
+    });
+    await poll(page, () => window.SparkleBitch.state.mode === 'image' && window.SparkleBitch.state.source, 5000, 'image for mode test');
+    const modeSafe = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      var before = SBM.state.source && SBM.state.source.kind;
+      SBM.state.tool = 'pen';                 // as if Pen was picked in image mode
+      SBM.setMode('text');                    // switch to text
+      var v = document.getElementById('view'), r = v.getBoundingClientRect();
+      v.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true }));
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      var toolInText = SBM.state.tool;
+      SBM.setMode('image');                   // back to image — must still be loaded
+      return { before: before, restored: SBM.state.source && SBM.state.source.kind, tool: toolInText };
+    });
+    ok(modeSafe.before === 'image', 'fix: image loaded before switch');
+    ok(modeSafe.restored === 'image', 'fix: image preserved after Text round-trip (no reopen)');
+    ok(modeSafe.tool === 'auto', 'fix: paint tool reset to Auto in Text mode (no crash on click)');
+
     // ---- VIDEO SUPPORT ----
     const vid = await page.evaluate(() => ({ supported: SB.exporter.videoSupported() }));
     if (vid.supported) ok(true, 'video: MediaRecorder available in this browser');
