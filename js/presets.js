@@ -40,6 +40,11 @@
       contrastThreshold: 60,
       maxPoints: 700,
       seed: 1234,
+      // glitter (text fill + optional photo overlay)
+      glitterStyle: 'silver',
+      glitterDensity: 0.6,
+      glitterIntensity: 0.9,
+      glitterOnImage: false,
       // export animation
       lengthSec: 2,
       fps: 15

@@ -202,13 +202,17 @@
     var w = opts.width, h = opts.height;
     var loop = opts.loop == null ? 0 : opts.loop;
     var diff = opts.transparencyDiff !== false && frames.length > 1;
-    var maxColors = Math.min(opts.maxColors || 256, diff ? 255 : 256);
+    // opts.transparent: treat source pixels with alpha < 8 as see-through
+    // (glitter TEXT on a transparent background exports as a sticker).
+    var wantTransparent = !!opts.transparent;
+    var useTranspIndex = diff || wantTransparent;
+    var maxColors = Math.min(opts.maxColors || 256, useTranspIndex ? 255 : 256);
 
     var pal = buildPalette(frames, w, h, maxColors);
-    var transparentIndex = diff ? pal.length : -1;
+    var transparentIndex = useTranspIndex ? pal.length : -1;
 
     // table size must be a power of two, >= colours (+1 for transparent), >= 4
-    var need = pal.length + (diff ? 1 : 0);
+    var need = pal.length + (useTranspIndex ? 1 : 0);
     var bits = 2; while ((1 << bits) < need) bits++;
     var tableSize = 1 << bits;
     var minCodeSize = bits; // >= 2 guaranteed
@@ -234,12 +238,24 @@
 
     var prevIdx = null;
     for (var f = 0; f < frames.length; f++) {
-      var idx = mapFrame(frames[f].data, w, h, mapper, !!opts.dither);
-      var useTransp = diff && f > 0;
-      if (useTransp) {
-        for (var i = 0; i < px; i++) if (idx[i] === prevIdx[i]) idx[i] = transparentIndex;
+      var data = frames[f].data;
+      // 'mapped' is what this frame fully shows (background made transparent).
+      var mapped = mapFrame(data, w, h, mapper, !!opts.dither);
+      if (wantTransparent) {
+        for (var a = 0; a < px; a++) if (data[a * 4 + 3] < 8) mapped[a] = transparentIndex;
       }
-      prevIdx = useTransp ? mergePrev(prevIdx, idx, transparentIndex) : idx.slice();
+      // 'idx' is what we actually write: inter-frame diff may blank unchanged
+      // pixels to the transparent index (with disposal=1 they reveal the prev).
+      var idx = mapped;
+      if (diff && f > 0) {
+        idx = mapped.slice();
+        for (var i = 0; i < px; i++) {
+          if (idx[i] === transparentIndex) continue;
+          if (idx[i] === prevIdx[i]) idx[i] = transparentIndex;
+        }
+      }
+      var useTransp = useTranspIndex && (wantTransparent || f > 0);
+      prevIdx = f === 0 ? mapped.slice() : mergePrev(prevIdx, mapped, transparentIndex);
 
       // graphic control extension
       var delay = Math.max(2, Math.round((frames[f].delay || 100) / 10));

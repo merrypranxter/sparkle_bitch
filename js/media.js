@@ -62,8 +62,9 @@
   function loadFromFile(file, maxWork) {
     maxWork = maxWork || 700;
     var kind = kindOf(file);
-    var url = URL.createObjectURL(file);
 
+    // GIF reads the File directly (FileReader) — no object URL needed, so none
+    // is created here and nothing can leak on the error path.
     if (kind === 'gif') {
       return readArrayBuffer(file).then(function (buf) {
         var g = SB.decodeGIF(buf);
@@ -71,7 +72,6 @@
           return { canvas: rgbaToCanvas(fr.data, g.width, g.height), delay: fr.delay };
         });
         if (!frames.length) throw new Error('GIF had no frames');
-        URL.revokeObjectURL(url);
         return {
           kind: 'gif', width: g.width, height: g.height,
           drawable: frames[0].canvas, frames: frames,
@@ -80,6 +80,9 @@
         };
       });
     }
+
+    // image/video use an object URL as the element source.
+    var url = URL.createObjectURL(file);
 
     if (kind === 'video') {
       return new Promise(function (res, rej) {
@@ -111,11 +114,24 @@
         work: workingImageData(img, img.naturalWidth, img.naturalHeight, maxWork),
         revoke: function () { URL.revokeObjectURL(url); }
       };
-    });
+    }).catch(function (e) { URL.revokeObjectURL(url); throw e; });
+  }
+
+  // Build a "source" from text options (glitter TEXT mode). Same shape as the
+  // other sources, so preview/export reuse works unchanged. Background is
+  // transparent so it exports as a see-through sticker.
+  function makeTextSource(textOpts) {
+    var tr = SB.text.renderText(textOpts);
+    return {
+      kind: 'text', width: tr.width, height: tr.height,
+      drawable: null, frames: null, transparent: true,
+      textRender: tr, work: null, revoke: function () {}
+    };
   }
 
   SB.media = {
     loadFromFile: loadFromFile,
+    makeTextSource: makeTextSource,
     rgbaToCanvas: rgbaToCanvas,
     workingImageData: workingImageData,
     kindOf: kindOf

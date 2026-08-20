@@ -4,18 +4,24 @@
 (function () {
   'use strict';
   var U = SB.util, A = SB.analyze, SPK = SB.sparkles, R = SB.render,
-      MED = SB.media, EXP = SB.exporter, PRE = SB.presets;
+      MED = SB.media, EXP = SB.exporter, PRE = SB.presets, GL = SB.glitter, TXT = SB.text;
 
   var $ = function (id) { return document.getElementById(id); };
   var MATTE = '#0a0710';
 
   var state = {
+    mode: 'image',      // 'image' | 'text'
     source: null,
     params: PRE.defaults(),
     centers: [],
     penCenters: [],
     instances: [],
     rng: null,
+    glitterField: null,
+    textOpts: {
+      text: 'sparkle bitch', font: 'fat', size: 96, bold: true, italic: false,
+      outline: 4, outlineColor: '#3a0a2e', shadow: true, bg: null // null = transparent
+    },
     maskCanvas: null,   // working-res canvas; painted = selected
     maskActive: false,
     tool: 'auto',
@@ -75,13 +81,45 @@
     setStatus(state.instances.length + ' sparkles');
   }
 
+  // ---- glitter / text ---------------------------------------------------
+  function refDims() {
+    if (state.source) return { w: state.source.width, h: state.source.height };
+    return { w: view.width, h: view.height };
+  }
+  function buildGlitterField() {
+    var d = refDims();
+    state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed);
+  }
+  function rebuildText() {
+    state.source = MED.makeTextSource(state.textOpts);
+    view.width = state.source.width; view.height = state.source.height;
+    document.body.classList.add('has-image');
+    buildGlitterField();
+    setStatus('“' + state.textOpts.text + '” · ' + state.params.glitterStyle + ' glitter');
+  }
+  function renderExtras() {
+    if (state.mode === 'text' && state.source && state.source.textRender) {
+      return { text: state.source.textRender, glitterField: state.glitterField };
+    }
+    var o = {};
+    if (state.params.glitterOnImage && state.glitterField) {
+      o.glitterField = state.glitterField;
+      o.glitterOnImage = true;
+      if (state.maskActive) o.glitterMask = state.maskCanvas;
+    }
+    return o;
+  }
+  function currentMatte() { return state.mode === 'text' ? (state.textOpts.bg || null) : MATTE; }
+  function textTransparent() { return state.mode === 'text' && !state.textOpts.bg; }
+
   // --------------------------------------------------------------- preview
   function loop(ts) {
     if (state.source) {
       var T = Math.max(300, (state.params.lengthSec || 2) * 1000);
       var phase = state.playing ? ((ts % T) / T) : 0;
-      R.render(vctx, state.source.drawable, state.instances, state.params, phase, { matte: MATTE });
-      drawOverlay();
+      var o = renderExtras(); o.matte = currentMatte();
+      R.render(vctx, state.source.drawable, state.instances, state.params, phase, o);
+      if (state.mode === 'image') drawOverlay();
     }
     requestAnimationFrame(loop);
   }
@@ -114,6 +152,7 @@
     MED.loadFromFile(file, 700).then(function (src) {
       if (state.source && state.source.revoke) state.source.revoke();
       state.source = src;
+      state.mode = 'image'; applyModeUI();
       // reset selection
       state.penCenters = []; state.maskActive = false; ensureMaskCanvas();
       state.maskCanvas.getContext('2d').clearRect(0, 0, state.maskCanvas.width, state.maskCanvas.height);
@@ -123,6 +162,7 @@
       document.body.classList.add('has-image');
       if (src.kind === 'video' && src.video) { src.video.loop = true; src.video.play().catch(function () {}); }
       redetect();
+      buildGlitterField();
       state.busy = false;
       setStatus(src.kind.toUpperCase() + ' ' + src.width + '×' + src.height + ' · ' + state.instances.length + ' sparkles');
     }).catch(function (err) {
@@ -212,7 +252,8 @@
   function doPNG() {
     if (busyGuard()) return;
     state.busy = true; setStatus('Rendering PNG…');
-    EXP.exportPNG(state.source, state.instances, state.params, { maxLong: 2000, matte: MATTE }).then(function (blob) {
+    EXP.exportPNG(state.source, state.instances, state.params,
+      { maxLong: 2000, matte: currentMatte(), render: renderExtras() }).then(function (blob) {
       var name = 'sparklebitch.png';
       EXP.download(blob, name);
       showResult('image', URL.createObjectURL(blob), name);
@@ -223,7 +264,11 @@
   function doGIF() {
     if (busyGuard()) return;
     state.busy = true; setStatus('Making GIF…'); setProgress(0);
-    var opts = { maxLong: 480, matte: MATTE, lengthSec: state.params.lengthSec, fps: state.params.fps };
+    var opts = {
+      maxLong: state.mode === 'text' ? 640 : 480, matte: currentMatte(),
+      render: renderExtras(), transparent: textTransparent(),
+      lengthSec: state.params.lengthSec, fps: state.params.fps
+    };
     EXP.exportGIF(state.source, state.instances, state.params, opts, function (frac, label) {
       setProgress(frac); setStatus('Making GIF… ' + label);
     }).then(function (bytes) {
@@ -239,7 +284,7 @@
     if (busyGuard()) return;
     if (!EXP.videoSupported()) { setStatus('⚠ Video export not supported in this browser — try GIF.'); return; }
     state.busy = true; setStatus('Recording video…'); setProgress(0);
-    var opts = { maxLong: 720, matte: MATTE, lengthSec: state.params.lengthSec, fps: Math.max(12, state.params.fps) };
+    var opts = { maxLong: 720, matte: currentMatte() || MATTE, render: renderExtras(), lengthSec: state.params.lengthSec, fps: Math.max(12, state.params.fps) };
     EXP.exportVideo(state.source, state.instances, state.params, opts, function (frac) { setProgress(frac); })
       .then(function (out) {
         setProgress(null);
@@ -252,8 +297,42 @@
   }
 
   // ------------------------------------------------------------------ wire
+  function populateSelect(id, items) {
+    var el = $(id); if (!el) return;
+    el.innerHTML = '';
+    for (var i = 0; i < items.length; i++) {
+      var o = document.createElement('option'); o.value = items[i].id; o.textContent = items[i].label; el.appendChild(o);
+    }
+  }
+  function bindText(id, key, kind) {
+    var el = $(id); if (!el) return;
+    el.addEventListener(kind === 'change' ? 'change' : 'input', function () {
+      var v = el.type === 'checkbox' ? el.checked : (el.type === 'range' ? parseFloat(el.value) : el.value);
+      state.textOpts[key] = v; updateAllLabels();
+      if (state.mode === 'text') rebuildText();
+    });
+  }
+  function setMode(mode) {
+    state.mode = mode; applyModeUI();
+    if (mode === 'text') {
+      rebuildText();
+    } else if (!state.source || state.source.kind === 'text') {
+      state.source = null; document.body.classList.remove('has-image'); setStatus('Open an image or GIF ✨');
+    }
+  }
+  function applyModeUI() {
+    document.body.classList.toggle('mode-text', state.mode === 'text');
+    document.body.classList.toggle('mode-image', state.mode === 'image');
+    $('tabImage').classList.toggle('active', state.mode === 'image');
+    $('tabText').classList.toggle('active', state.mode === 'text');
+    updateGlitterVisibility();
+  }
+  function updateGlitterVisibility() {
+    $('glitterGroup').classList.toggle('hidden', !(state.mode === 'text' || state.params.glitterOnImage));
+  }
+
   function syncControls() {
-    var p = state.params;
+    var p = state.params, t = state.textOpts;
     setVal('intensity', p.intensity); setVal('maxSize', p.maxSize);
     setVal('density', p.density); setVal('glow', p.glow);
     setVal('colorBoost', p.colorBoost); setVal('speed', p.speed);
@@ -263,6 +342,16 @@
     $('hueCycle').checked = !!p.hueCycle; $('spin').checked = !!p.spinRevs;
     $('presetClassic').classList.toggle('active', p.preset === 'classic');
     $('presetAstral').classList.toggle('active', p.preset === 'astral');
+    // glitter
+    setVal('glitterStyle', p.glitterStyle); setVal('glitterDensity', p.glitterDensity);
+    setVal('glitterIntensity', p.glitterIntensity); $('glitterFill').checked = !!p.glitterOnImage;
+    // text
+    setVal('textInput', t.text); setVal('textFont', t.font); setVal('textSize', t.size);
+    $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
+    setVal('textOutline', t.outline); setVal('textOutlineColor', t.outlineColor);
+    $('textShadow').checked = !!t.shadow;
+    $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
+    $('textBgColor').disabled = !t.bg;
     updateAllLabels();
   }
   function setVal(id, v) { var el = $(id); if (el) el.value = v; }
@@ -317,12 +406,16 @@
     $('presetClassic').addEventListener('click', function () { applyPreset('classic'); });
     $('presetAstral').addEventListener('click', function () { applyPreset('astral'); });
 
+    // mode tabs
+    $('tabImage').addEventListener('click', function () { setMode('image'); });
+    $('tabText').addEventListener('click', function () { setMode('text'); });
+
     // sparkle it (re-roll)
     $('sparkleBtn').addEventListener('click', function () {
-      if (!state.source) { $('fileInput').click(); return; }
       state.params.seed = (Math.random() * 1e9) | 0;
-      redetect();
-      setStatus('✨ Sparkled! ' + state.instances.length + ' sparkles');
+      if (state.mode === 'text') { buildGlitterField(); setStatus('✨ Reglittered!'); }
+      else if (!state.source) { $('fileInput').click(); }
+      else { redetect(); buildGlitterField(); setStatus('✨ Sparkled! ' + state.instances.length + ' sparkles'); }
     });
 
     // sliders
@@ -336,7 +429,6 @@
     bindSlider('fps', 'fps', 'render');
     bindSlider('lumaThreshold', 'lumaThreshold', 'redetect');
     bindSlider('contrastThreshold', 'contrastThreshold', 'redetect');
-    bindSlider('brushSize', 'brushSize', 'render'); // stored on params too (unused)
     $('brushSize').addEventListener('input', function () { state.brushSize = parseFloat($('brushSize').value); updateAllLabels(); });
 
     // selects / checkboxes
@@ -344,6 +436,31 @@
     $('colorMode').addEventListener('change', function () { state.params.colorMode = $('colorMode').value; rebuild(); });
     $('hueCycle').addEventListener('change', function () { state.params.hueCycle = $('hueCycle').checked; });
     $('spin').addEventListener('change', function () { state.params.spinRevs = $('spin').checked ? 1 : 0; });
+
+    // glitter controls (shared by text mode + image glitter-fill)
+    populateSelect('glitterStyle', GL.styleList());
+    $('glitterStyle').addEventListener('change', function () { state.params.glitterStyle = $('glitterStyle').value; buildGlitterField(); });
+    $('glitterDensity').addEventListener('input', function () { state.params.glitterDensity = parseFloat($('glitterDensity').value); updateAllLabels(); buildGlitterField(); });
+    $('glitterIntensity').addEventListener('input', function () { state.params.glitterIntensity = parseFloat($('glitterIntensity').value); updateAllLabels(); });
+    $('glitterFill').addEventListener('change', function () {
+      state.params.glitterOnImage = $('glitterFill').checked;
+      updateGlitterVisibility(); if (state.params.glitterOnImage) buildGlitterField();
+    });
+
+    // text controls
+    populateSelect('textFont', TXT.fontList());
+    bindText('textInput', 'text'); bindText('textFont', 'font', 'change');
+    bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
+    bindText('textItalic', 'italic', 'change'); bindText('textOutline', 'outline');
+    bindText('textOutlineColor', 'outlineColor', 'change'); bindText('textShadow', 'shadow', 'change');
+    $('textTransparent').addEventListener('change', function () {
+      state.textOpts.bg = $('textTransparent').checked ? null : $('textBgColor').value;
+      $('textBgColor').disabled = $('textTransparent').checked;
+      if (state.mode === 'text') rebuildText();
+    });
+    $('textBgColor').addEventListener('input', function () {
+      if (!$('textTransparent').checked) { state.textOpts.bg = $('textBgColor').value; if (state.mode === 'text') rebuildText(); }
+    });
 
     // tools
     ['toolAuto', 'toolBrush', 'toolPen'].forEach(function (id) {
@@ -375,6 +492,7 @@
     if (!EXP.videoSupported()) { $('exportVideo').title = 'Not supported in this browser'; }
 
     syncControls();
+    applyModeUI();
     requestAnimationFrame(loop);
     setStatus('Open an image or GIF to start ✨');
   }
@@ -386,9 +504,13 @@
   window.SparkleBitch = {
     openFile: openFile, state: state,
     doPNG: doPNG, doGIF: doGIF,
+    setMode: setMode,
+    setText: function (o) { for (var k in o) state.textOpts[k] = o[k]; syncControls(); if (state.mode === 'text') rebuildText(); },
+    setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); },
+    renderStillCanvas: function () { return EXP.renderStill(state.source, state.instances, state.params, 640, currentMatte(), renderExtras()); },
     exportGifBytes: function () {
       return EXP.exportGIF(state.source, state.instances, state.params,
-        { maxLong: 240, matte: MATTE, lengthSec: 1, fps: 8 }, function () {});
+        { maxLong: 240, matte: currentMatte(), render: renderExtras(), transparent: textTransparent(), lengthSec: 1, fps: 8 }, function () {});
     }
   };
 })();

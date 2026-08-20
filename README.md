@@ -1,10 +1,17 @@
 # Sparkle Bitch ✨
 
 A personal **Y2K glitter engine** — a from-scratch clone of the early-2000s
-[Glitterboo](https://glitterboo.com) sparkle tool. Drop in an image or GIF, it
-finds the bright/high-contrast spots, drops in animated sparkle sprites that
-match the local colour and size, and exports the result as a **PNG**,
-**animated GIF**, or **video**.
+[Glitterboo](https://glitterboo.com) / Glitterfy / Picasion glitter tools. Two
+modes:
+
+- **Image / GIF:** drop in a picture or GIF; it finds the bright/high-contrast
+  spots, drops in animated sparkle sprites that match the local colour and size,
+  and (optionally) lays animated glitter over the photo.
+- **Text:** type words and get **animated glitter text** — letterforms filled
+  with shimmering "dry glitter", on a transparent background so you can paste it
+  anywhere.
+
+Everything exports as a **PNG**, **animated GIF**, or **video**.
 
 Everything runs in the browser in plain JavaScript. **No build step, no server,
 no dependencies, no accounts.** It works on a Chromebook, and it works offline.
@@ -96,14 +103,20 @@ A workflow is already included (`.github/workflows/pages.yml`). One-time setup:
 ## Develop / test
 
 ```bash
-# codec round-trip + animation loop-closure (Node, no deps)
+# codec round-trip, animation + glitter loop-closure (Node, no deps)
 node test/codec.test.cjs
 node test/loop.test.cjs
+node test/glitter.test.cjs
 
-# end-to-end in a real browser (uses the pre-installed Chromium)
-npm install          # installs playwright (dev only)
-node test/e2e.cjs
+# end-to-end in a real browser
+npm install          # dev-only: installs playwright-core (NO bundled browser)
+node test/e2e.cjs    # needs a Chromium; set CHROMIUM_PATH=/path/to/chrome
 ```
+
+The e2e/demo scripts need a Chromium binary. In this project's environment one
+is pre-installed at `/opt/pw-browsers/chromium`; elsewhere, point
+`CHROMIUM_PATH` at your own Chrome/Chromium (playwright-core does not download
+one).
 
 ---
 
@@ -113,9 +126,10 @@ node test/e2e.cjs
 index.html      app shell            js/analyze.js    highlight detection
 css/style.css   styling              js/sparkles.js   instances + sprites
 js/util.js      rng / colour maths   js/render.js     per-frame compositing
-js/anim.js      loop-closure maths   js/gif-encode.js GIF89a encoder
-js/presets.js   Classic / Astral     js/gif-decode.js GIF decoder
-js/media.js     load image/gif/video js/export.js     PNG / GIF / video export
+js/anim.js      loop-closure maths   js/glitter.js    dry-glitter flake engine
+js/presets.js   Classic / Astral     js/text.js       glitter-text letterforms
+js/media.js     load image/gif/text  js/gif-encode.js GIF89a encoder (+alpha)
+js/export.js    PNG / GIF / video     js/gif-decode.js GIF decoder
 js/main.js      UI + controller
 ```
 
