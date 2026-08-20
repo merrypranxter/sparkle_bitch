@@ -19,7 +19,9 @@ require('../js/gif-encode.js');
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(__dirname, 'out');
 const PORT = 8123;
-const EXE = '/opt/pw-browsers/chromium';
+// Override with CHROMIUM_PATH=/path/to/chrome on other machines; defaults to the
+// browser pre-installed in this environment.
+const EXE = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
 
 let failures = 0, warns = 0;
 function ok(cond, msg) { if (!cond) { failures++; console.error('  ✗ ' + msg); } else { console.log('  ✓ ' + msg); } }
@@ -176,6 +178,59 @@ async function poll(page, fn, timeout, label) {
     ok(gifIn.outFrames === gifIn.srcFrames, 'gif input: re-exported same frame count (' + gifIn.outFrames + ')');
     await sleep(200);
     await page.screenshot({ path: path.join(OUT, '02-gif.png') });
+
+    // ---- TEXT MODE: glitter text, transparent background, export ----
+    await page.evaluate(async () => {
+      window.SparkleBitch.setMode('text');
+      window.SparkleBitch.setText({ text: 'SPARKLE BITCH', size: 96, outline: 5 });
+      window.SparkleBitch.setGlitter({ glitterStyle: 'rainbow', glitterDensity: 0.7 });
+    });
+    await poll(page, () => {
+      var s = window.SparkleBitch.state;
+      return s.mode === 'text' && s.source && s.source.kind === 'text' && s.glitterField;
+    }, 5000, 'text source');
+    const textInfo = await page.evaluate(() => {
+      var cv = window.SparkleBitch.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      var lit = 0, opaque = 0, transparent = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        if (d[i + 3] > 200) { opaque++; if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 110) lit++; }
+        else if (d[i + 3] < 8) transparent++;
+      }
+      return { opaque: opaque, lit: lit, transparent: transparent, total: d.length / 4 };
+    });
+    ok(textInfo.opaque > 200, 'text: letterforms rendered (' + textInfo.opaque + ' opaque px)');
+    ok(textInfo.lit > 100, 'text: glitter fills the letters (' + textInfo.lit + ' bright px)');
+    ok(textInfo.transparent > textInfo.total * 0.3, 'text: transparent background (' + Math.round(100 * textInfo.transparent / textInfo.total) + '%)');
+    const tgif = await page.evaluate(async () => {
+      var u8 = new Uint8Array(await window.SparkleBitch.exportGifBytes());
+      var dec = SB.decodeGIF(u8), f = dec.frames[0].data, hasT = false;
+      for (var i = 0; i < f.length; i += 4) { if (f[i + 3] < 8) { hasT = true; break; } }
+      return { magic: String.fromCharCode(u8[0], u8[1], u8[2]), frames: dec.frames.length, hasT: hasT };
+    });
+    ok(tgif.magic === 'GIF', 'text gif: valid GIF');
+    ok(tgif.frames > 1, 'text gif: multi-frame (' + tgif.frames + ')');
+    ok(tgif.hasT, 'text gif: transparent background preserved');
+    await sleep(200);
+    await page.screenshot({ path: path.join(OUT, '03-text.png') });
+
+    // ---- GLITTER FILL over an image ----
+    await page.evaluate(async () => {
+      var W = 320, H = 200, c = document.createElement('canvas'); c.width = W; c.height = H;
+      var x = c.getContext('2d'); x.fillStyle = '#141018'; x.fillRect(0, 0, W, H);
+      var blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      window.SparkleBitch.openFile(new File([blob], 'flat.png', { type: 'image/png' }));
+    });
+    await poll(page, () => window.SparkleBitch.state.mode === 'image' && window.SparkleBitch.state.source, 5000, 'image reloaded');
+    const gfill = await page.evaluate(() => {
+      window.SparkleBitch.setGlitter({ glitterOnImage: true, glitterStyle: 'gold', glitterDensity: 0.8, glitterIntensity: 1 });
+      var cv = window.SparkleBitch.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, bright = 0;
+      for (var i = 0; i < d.length; i += 4) if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 120) bright++;
+      return { on: window.SparkleBitch.state.params.glitterOnImage, bright: bright };
+    });
+    ok(gfill.on === true, 'image: glitter fill toggles on');
+    ok(gfill.bright > 300, 'image: glitter lays flakes over the photo (' + gfill.bright + ' bright px)');
 
     // ---- VIDEO SUPPORT ----
     const vid = await page.evaluate(() => ({ supported: SB.exporter.videoSupported() }));

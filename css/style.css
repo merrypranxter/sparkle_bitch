@@ -136,6 +136,35 @@ input[type="range"] { accent-color: var(--pink); height: 22px; }
 .tool-row label { display: inline-flex; gap: 4px; align-items: center; }
 .hint { margin: 0; font-size: 11px; color: var(--muted); }
 
+/* ---- glitter text mode ---- */
+.hidden { display: none !important; }
+
+.tabs { display: flex; gap: 6px; }
+.tab {
+  flex: 1; appearance: none; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--muted); padding: 9px 8px; border-radius: 10px; cursor: pointer;
+  font-weight: 700; font-size: 13px;
+}
+.tab.active { color: #fff; border-color: var(--pink); background: rgba(255,95,210,.14); }
+
+.image-controls, .text-controls { display: flex; flex-direction: column; gap: 12px; }
+.mode-text-only { display: none; }
+body.mode-text .mode-text-only { display: flex; }
+body.mode-text .mode-image-only { display: none !important; }
+
+.group-title { font-weight: 800; color: var(--ink); font-size: 13px; }
+.ctl.check { flex-direction: row; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
+.ctl.check input { width: auto; }
+input[type="text"] {
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 9px; font-size: 15px; width: 100%;
+}
+input[type="color"] {
+  width: 100%; height: 30px; padding: 2px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+input[type="color"]:disabled { opacity: .4; cursor: not-allowed; }
+
 /* ---- responsive: stack on narrow screens ---- */
 @media (max-width: 820px) {
   .app { grid-template-columns: 1fr; }

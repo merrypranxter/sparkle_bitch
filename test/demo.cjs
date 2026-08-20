@@ -12,7 +12,7 @@ const fs = require('fs');
 const ROOT = path.join(__dirname, '..');
 const DEMO = path.join(ROOT, 'demo');
 const PORT = 8124;
-const EXE = '/opt/pw-browsers/chromium';
+const EXE = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function waitServer() {
@@ -85,6 +85,34 @@ function waitServer() {
   await page.waitForFunction(() => window.SparkleBitch.state.params.preset === 'astral');
   await sleep(400);
   await exportBoth('astral');
+
+  // ---- glitter TEXT demos ----
+  async function textDemo(tag, text, style, bg) {
+    await page.evaluate(function (a) {
+      window.SparkleBitch.setMode('text');
+      window.SparkleBitch.setText({ text: a.text, size: 120, outline: 6, font: 'fat', bold: true, shadow: true, bg: a.bg });
+      window.SparkleBitch.setGlitter({ glitterStyle: a.style, glitterDensity: 0.8, glitterIntensity: 1 });
+    }, { text: text, style: style, bg: bg || null });
+    await page.waitForFunction(() => window.SparkleBitch.state.mode === 'text' && window.SparkleBitch.state.glitterField);
+    await sleep(300);
+    await page.screenshot({ path: path.join(DEMO, tag + '-ui.png') });
+    var out = await page.evaluate(async function (transparent) {
+      var st = window.SparkleBitch.state;
+      var gif = await SB.exporter.exportGIF(st.source, st.instances, st.params, {
+        maxLong: 600, matte: st.textOpts.bg || undefined,
+        render: { text: st.source.textRender, glitterField: st.glitterField },
+        transparent: transparent, lengthSec: 1.6, fps: 14
+      }, function () {});
+      var b = '', u8 = new Uint8Array(gif);
+      for (var i = 0; i < u8.length; i++) b += String.fromCharCode(u8[i]);
+      return btoa(b);
+    }, !bg);
+    fs.writeFileSync(path.join(DEMO, tag + '.gif'), Buffer.from(out, 'base64'));
+    console.log('wrote demo/' + tag + '.gif (' + ((fs.statSync(path.join(DEMO, tag + '.gif')).size / 1024) | 0) + ' KB)');
+  }
+  await textDemo('text-rainbow', 'sparkle bitch', 'rainbow', '#0b0713'); // on dark bg so it's easy to view
+  await textDemo('text-gold', 'Y2K', 'gold', null);                     // transparent sticker
+  await textDemo('text-pink', 'glitter', 'pink', '#0b0713');
 
   await browser.close();
   server.kill('SIGTERM');

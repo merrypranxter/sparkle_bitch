@@ -77,5 +77,25 @@ const one = SB.encodeGIF([frames[0]], { width: W, height: H });
 const decOne = SB.decodeGIF(one);
 assert(decOne.frames.length === 1, 'single-frame GIF round-trips');
 
+// ---- transparent-background round-trip (glitter text) ----
+const tw = 48, th = 32;
+const tframes = [];
+for (let f = 0; f < 3; f++) {
+  const d = new Uint8ClampedArray(tw * th * 4); // all alpha 0 -> transparent bg
+  const bx = 6 + f * 10;
+  for (let y = 10; y < 22; y++) for (let x = bx; x < bx + 12; x++) {
+    if (x >= tw) continue; const p = (y * tw + x) * 4;
+    d[p] = 255; d[p + 1] = 80; d[p + 2] = 200; d[p + 3] = 255;
+  }
+  tframes.push({ data: d, delay: 100 });
+}
+const tbytes = SB.encodeGIF(tframes, { width: tw, height: th, transparent: true });
+const tdec = SB.decodeGIF(tbytes);
+assert(tdec.frames.length === 3, 'transparent GIF: frame count (' + tdec.frames.length + ')');
+const tb = tdec.frames[0].data;
+assert(tb[3] < 8, 'transparent GIF: corner background is see-through (alpha ' + tb[3] + ')');
+const sqPix = (14 * tw + 10) * 4;
+assert(tb[sqPix + 3] > 200, 'transparent GIF: foreground stays opaque (alpha ' + tb[sqPix + 3] + ')');
+
 console.log(failures === 0 ? '\nCODEC OK' : '\nCODEC FAILED (' + failures + ')');
 process.exit(failures === 0 ? 0 : 1);
