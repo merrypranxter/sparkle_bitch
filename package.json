@@ -1,0 +1,15 @@
+{
+  "name": "sparkle-bitch",
+  "version": "1.0.0",
+  "description": "A Y2K glitter engine — add animated sparkles to images, GIFs and video, all client-side.",
+  "private": true,
+  "scripts": {
+    "test:codec": "node test/codec.test.cjs",
+    "test:loop": "node test/loop.test.cjs",
+    "test:e2e": "node test/e2e.cjs",
+    "test": "node test/codec.test.cjs && node test/loop.test.cjs && node test/e2e.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

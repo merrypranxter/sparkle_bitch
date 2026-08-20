@@ -1,0 +1,394 @@
+/* Sparkle Bitch — main.js
+ * App controller: state, UI wiring, selection tools, live preview, export.
+ */
+(function () {
+  'use strict';
+  var U = SB.util, A = SB.analyze, SPK = SB.sparkles, R = SB.render,
+      MED = SB.media, EXP = SB.exporter, PRE = SB.presets;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var MATTE = '#0a0710';
+
+  var state = {
+    source: null,
+    params: PRE.defaults(),
+    centers: [],
+    penCenters: [],
+    instances: [],
+    rng: null,
+    maskCanvas: null,   // working-res canvas; painted = selected
+    maskActive: false,
+    tool: 'auto',
+    brushSize: 40,
+    playing: true,
+    busy: false
+  };
+
+  var view = $('view'), vctx = view.getContext('2d');
+
+  // ---------------------------------------------------------------- helpers
+  function setStatus(msg) { $('status').textContent = msg || ''; }
+  function setProgress(frac) {
+    var bar = $('progressBar');
+    if (frac == null) { $('progress').classList.add('hidden'); return; }
+    $('progress').classList.remove('hidden');
+    bar.style.width = Math.round(frac * 100) + '%';
+  }
+
+  function workDims() { return state.source ? { w: state.source.work.width, h: state.source.work.height } : { w: 1, h: 1 }; }
+
+  function ensureMaskCanvas() {
+    var d = workDims();
+    if (!state.maskCanvas || state.maskCanvas.width !== d.w || state.maskCanvas.height !== d.h) {
+      var c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
+      state.maskCanvas = c;
+    }
+    return state.maskCanvas;
+  }
+
+  function maskArray() {
+    if (!state.maskActive) return null;
+    var c = state.maskCanvas, ctx = c.getContext('2d');
+    var id = ctx.getImageData(0, 0, c.width, c.height).data;
+    var m = new Uint8Array(c.width * c.height);
+    for (var i = 0, p = 3; i < m.length; i++, p += 4) m[i] = id[p] > 8 ? 1 : 0;
+    return m;
+  }
+
+  // -------------------------------------------------------------- pipeline
+  function redetect() {
+    if (!state.source) return;
+    var p = state.params;
+    var centers = A.detectAdaptive(state.source.work, {
+      lumaThreshold: p.lumaThreshold, contrastThreshold: p.contrastThreshold,
+      density: p.density, maxPoints: p.maxPoints, mask: maskArray(), sampleRadius: 2
+    }, 24);
+    // pen points are forced sparkle centres (colour sampled, white if dark)
+    state.centers = centers.concat(state.penCenters);
+    rebuild();
+  }
+
+  function rebuild() {
+    var p = state.params;
+    state.rng = U.mulberry32(U.hashSeed(p.seed));
+    state.instances = SPK.build(state.centers, p, state.rng);
+    setStatus(state.instances.length + ' sparkles');
+  }
+
+  // --------------------------------------------------------------- preview
+  function loop(ts) {
+    if (state.source) {
+      var T = Math.max(300, (state.params.lengthSec || 2) * 1000);
+      var phase = state.playing ? ((ts % T) / T) : 0;
+      R.render(vctx, state.source.drawable, state.instances, state.params, phase, { matte: MATTE });
+      drawOverlay();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function drawOverlay() {
+    if (state.tool === 'auto') return;
+    var W = view.width, H = view.height, d = workDims();
+    if (state.maskActive) {
+      vctx.save();
+      vctx.globalAlpha = 0.28; vctx.globalCompositeOperation = 'source-over';
+      vctx.imageSmoothingEnabled = false;
+      vctx.drawImage(state.maskCanvas, 0, 0, W, H);
+      vctx.restore();
+    }
+    if (state.penCenters.length) {
+      vctx.save();
+      vctx.strokeStyle = 'rgba(79,227,255,0.9)'; vctx.lineWidth = 2;
+      for (var i = 0; i < state.penCenters.length; i++) {
+        var c = state.penCenters[i];
+        vctx.beginPath(); vctx.arc(c.nx * W, c.ny * H, 4, 0, 7); vctx.stroke();
+      }
+      vctx.restore();
+    }
+  }
+
+  // ------------------------------------------------------------ open a file
+  function openFile(file) {
+    if (!file) return;
+    state.busy = true; setStatus('Loading ' + (file.name || 'file') + '…'); setProgress(null);
+    MED.loadFromFile(file, 700).then(function (src) {
+      if (state.source && state.source.revoke) state.source.revoke();
+      state.source = src;
+      // reset selection
+      state.penCenters = []; state.maskActive = false; ensureMaskCanvas();
+      state.maskCanvas.getContext('2d').clearRect(0, 0, state.maskCanvas.width, state.maskCanvas.height);
+      // size the visible canvas to the source aspect (cap for perf)
+      var sz = EXP.fitSize(src.width, src.height, 960);
+      view.width = sz.w; view.height = sz.h;
+      document.body.classList.add('has-image');
+      if (src.kind === 'video' && src.video) { src.video.loop = true; src.video.play().catch(function () {}); }
+      redetect();
+      state.busy = false;
+      setStatus(src.kind.toUpperCase() + ' ' + src.width + '×' + src.height + ' · ' + state.instances.length + ' sparkles');
+    }).catch(function (err) {
+      state.busy = false; setStatus('⚠ ' + err.message);
+    });
+  }
+
+  // ----------------------------------------------------------- pen / brush
+  function pointerToNorm(ev) {
+    var r = view.getBoundingClientRect();
+    var x = (ev.clientX - r.left) / r.width;
+    var y = (ev.clientY - r.top) / r.height;
+    return { nx: U.clamp(x, 0, 1), ny: U.clamp(y, 0, 1) };
+  }
+
+  function paintMask(nx, ny) {
+    var c = ensureMaskCanvas(), ctx = c.getContext('2d');
+    var rad = Math.max(3, (state.brushSize / view.width) * c.width);
+    ctx.fillStyle = 'rgba(79,227,255,1)';
+    ctx.beginPath(); ctx.arc(nx * c.width, ny * c.height, rad, 0, 7); ctx.fill();
+    state.maskActive = true;
+  }
+
+  function addPen(nx, ny) {
+    var d = workDims();
+    var wx = Math.floor(nx * d.w), wy = Math.floor(ny * d.h);
+    var col = A ? sampleWork(wx, wy) : [255, 255, 255];
+    var lum = U.luma(col[0], col[1], col[2]);
+    var forceColor;
+    if (state.params.colorMode === 'palette') forceColor = null; // let build pick palette
+    else if (state.params.colorMode === 'white' || lum < 40) forceColor = [255, 255, 255];
+    else forceColor = col;
+    state.penCenters.push({ nx: nx, ny: ny, size: 0.7, color: col, forceColor: forceColor });
+  }
+
+  var _workData = null, _workFor = null;
+  function sampleWork(x, y) {
+    if (_workFor !== state.source) {
+      _workData = state.source.work; _workFor = state.source;
+    }
+    var d = _workData, w = d.width, h = d.height;
+    x = U.clamp(x, 0, w - 1); y = U.clamp(y, 0, h - 1);
+    var p = (y * w + x) * 4;
+    return [d.data[p], d.data[p + 1], d.data[p + 2]];
+  }
+
+  var drawing = false, lastPen = null;
+  function onDown(ev) {
+    if (!state.source || state.tool === 'auto') return;
+    ev.preventDefault(); drawing = true; lastPen = null;
+    var n = pointerToNorm(ev);
+    if (state.tool === 'brush') paintMask(n.nx, n.ny);
+    else { addPen(n.nx, n.ny); lastPen = n; }
+  }
+  function onMove(ev) {
+    if (!drawing) return;
+    ev.preventDefault();
+    var n = pointerToNorm(ev);
+    if (state.tool === 'brush') paintMask(n.nx, n.ny);
+    else if (!lastPen || Math.hypot(n.nx - lastPen.nx, n.ny - lastPen.ny) > 0.03) { addPen(n.nx, n.ny); lastPen = n; }
+  }
+  function onUp() {
+    if (!drawing) return;
+    drawing = false;
+    redetect();
+  }
+
+  // --------------------------------------------------------------- exports
+  function busyGuard() {
+    if (state.busy) return true;
+    if (!state.source) { setStatus('Open an image, GIF or video first.'); return true; }
+    return false;
+  }
+
+  function showResult(kind, url, filename) {
+    var box = $('result'); box.innerHTML = '';
+    var el;
+    if (kind === 'video') { el = document.createElement('video'); el.src = url; el.controls = true; el.autoplay = true; el.loop = true; el.muted = true; }
+    else { el = document.createElement('img'); el.src = url; }
+    el.className = 'result-media';
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.className = 'result-save'; a.textContent = '⬇ Save ' + filename;
+    box.appendChild(el); box.appendChild(a);
+    box.classList.remove('hidden');
+  }
+
+  function doPNG() {
+    if (busyGuard()) return;
+    state.busy = true; setStatus('Rendering PNG…');
+    EXP.exportPNG(state.source, state.instances, state.params, { maxLong: 2000, matte: MATTE }).then(function (blob) {
+      var name = 'sparklebitch.png';
+      EXP.download(blob, name);
+      showResult('image', URL.createObjectURL(blob), name);
+      state.busy = false; setStatus('Saved PNG ✨');
+    });
+  }
+
+  function doGIF() {
+    if (busyGuard()) return;
+    state.busy = true; setStatus('Making GIF…'); setProgress(0);
+    var opts = { maxLong: 480, matte: MATTE, lengthSec: state.params.lengthSec, fps: state.params.fps };
+    EXP.exportGIF(state.source, state.instances, state.params, opts, function (frac, label) {
+      setProgress(frac); setStatus('Making GIF… ' + label);
+    }).then(function (bytes) {
+      setProgress(null);
+      var name = 'sparklebitch.gif';
+      var blob = EXP.download(bytes, name, 'image/gif');
+      showResult('image', URL.createObjectURL(blob), name);
+      state.busy = false; setStatus('Saved GIF ✨ (' + (bytes.length / 1024 | 0) + ' KB)');
+    }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+  }
+
+  function doVideo() {
+    if (busyGuard()) return;
+    if (!EXP.videoSupported()) { setStatus('⚠ Video export not supported in this browser — try GIF.'); return; }
+    state.busy = true; setStatus('Recording video…'); setProgress(0);
+    var opts = { maxLong: 720, matte: MATTE, lengthSec: state.params.lengthSec, fps: Math.max(12, state.params.fps) };
+    EXP.exportVideo(state.source, state.instances, state.params, opts, function (frac) { setProgress(frac); })
+      .then(function (out) {
+        setProgress(null);
+        var ext = out.mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+        var name = 'sparklebitch.' + ext;
+        EXP.download(out.blob, name);
+        showResult('video', URL.createObjectURL(out.blob), name);
+        state.busy = false; setStatus('Saved ' + ext.toUpperCase() + ' ✨');
+      }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+  }
+
+  // ------------------------------------------------------------------ wire
+  function syncControls() {
+    var p = state.params;
+    setVal('intensity', p.intensity); setVal('maxSize', p.maxSize);
+    setVal('density', p.density); setVal('glow', p.glow);
+    setVal('colorBoost', p.colorBoost); setVal('speed', p.speed);
+    setVal('lengthSec', p.lengthSec); setVal('fps', p.fps);
+    setVal('lumaThreshold', p.lumaThreshold); setVal('contrastThreshold', p.contrastThreshold);
+    $('styleMix').value = p.styleMix; $('colorMode').value = p.colorMode;
+    $('hueCycle').checked = !!p.hueCycle; $('spin').checked = !!p.spinRevs;
+    $('presetClassic').classList.toggle('active', p.preset === 'classic');
+    $('presetAstral').classList.toggle('active', p.preset === 'astral');
+    updateAllLabels();
+  }
+  function setVal(id, v) { var el = $(id); if (el) el.value = v; }
+  function updateAllLabels() {
+    document.querySelectorAll('[data-label-for]').forEach(function (lab) {
+      var el = $(lab.getAttribute('data-label-for'));
+      if (el) lab.textContent = el.value;
+    });
+  }
+
+  function applyPreset(name) {
+    PRE.apply(state.params, name);
+    syncControls();
+    redetect();
+  }
+
+  function bindSlider(id, param, mode) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener('input', function () {
+      var v = parseFloat(el.value);
+      state.params[param] = v;
+      updateAllLabels();
+      if (mode === 'redetect') scheduleRedetect();
+      else if (mode === 'rebuild') rebuild();
+      // 'render' => nothing, preview loop picks it up
+    });
+  }
+
+  var _rd = null;
+  function scheduleRedetect() { clearTimeout(_rd); _rd = setTimeout(redetect, 120); }
+
+  function init() {
+    // file input + drop
+    var input = $('fileInput');
+    input.addEventListener('change', function () { if (input.files[0]) openFile(input.files[0]); });
+    $('openBtn').addEventListener('click', function () { input.click(); });
+    $('dropHint').addEventListener('click', function () { input.click(); });
+
+    var stage = $('stage');
+    ['dragenter', 'dragover'].forEach(function (e) {
+      stage.addEventListener(e, function (ev) { ev.preventDefault(); stage.classList.add('drag'); });
+    });
+    ['dragleave', 'drop'].forEach(function (e) {
+      stage.addEventListener(e, function (ev) { ev.preventDefault(); stage.classList.remove('drag'); });
+    });
+    stage.addEventListener('drop', function (ev) {
+      var f = ev.dataTransfer && ev.dataTransfer.files[0]; if (f) openFile(f);
+    });
+
+    // presets
+    $('presetClassic').addEventListener('click', function () { applyPreset('classic'); });
+    $('presetAstral').addEventListener('click', function () { applyPreset('astral'); });
+
+    // sparkle it (re-roll)
+    $('sparkleBtn').addEventListener('click', function () {
+      if (!state.source) { $('fileInput').click(); return; }
+      state.params.seed = (Math.random() * 1e9) | 0;
+      redetect();
+      setStatus('✨ Sparkled! ' + state.instances.length + ' sparkles');
+    });
+
+    // sliders
+    bindSlider('intensity', 'intensity', 'render');
+    bindSlider('maxSize', 'maxSize', 'render');
+    bindSlider('density', 'density', 'redetect');
+    bindSlider('glow', 'glow', 'render');
+    bindSlider('colorBoost', 'colorBoost', 'rebuild');
+    bindSlider('speed', 'speed', 'render');
+    bindSlider('lengthSec', 'lengthSec', 'render');
+    bindSlider('fps', 'fps', 'render');
+    bindSlider('lumaThreshold', 'lumaThreshold', 'redetect');
+    bindSlider('contrastThreshold', 'contrastThreshold', 'redetect');
+    bindSlider('brushSize', 'brushSize', 'render'); // stored on params too (unused)
+    $('brushSize').addEventListener('input', function () { state.brushSize = parseFloat($('brushSize').value); updateAllLabels(); });
+
+    // selects / checkboxes
+    $('styleMix').addEventListener('change', function () { state.params.styleMix = $('styleMix').value; rebuild(); });
+    $('colorMode').addEventListener('change', function () { state.params.colorMode = $('colorMode').value; rebuild(); });
+    $('hueCycle').addEventListener('change', function () { state.params.hueCycle = $('hueCycle').checked; });
+    $('spin').addEventListener('change', function () { state.params.spinRevs = $('spin').checked ? 1 : 0; });
+
+    // tools
+    ['toolAuto', 'toolBrush', 'toolPen'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        if (!$(id).checked) return;
+        state.tool = id === 'toolAuto' ? 'auto' : id === 'toolBrush' ? 'brush' : 'pen';
+        view.classList.toggle('painting', state.tool !== 'auto');
+      });
+    });
+    $('clearSel').addEventListener('click', function () {
+      state.penCenters = []; state.maskActive = false;
+      if (state.maskCanvas) state.maskCanvas.getContext('2d').clearRect(0, 0, state.maskCanvas.width, state.maskCanvas.height);
+      redetect();
+    });
+    $('seedBtn').addEventListener('click', function () {
+      state.params.seed = (Math.random() * 1e9) | 0; rebuild();
+    });
+
+    // pointer paint
+    view.addEventListener('pointerdown', onDown);
+    view.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+
+    // exports
+    $('exportPng').addEventListener('click', doPNG);
+    $('exportGif').addEventListener('click', doGIF);
+    $('exportVideo').addEventListener('click', doVideo);
+
+    if (!EXP.videoSupported()) { $('exportVideo').title = 'Not supported in this browser'; }
+
+    syncControls();
+    requestAnimationFrame(loop);
+    setStatus('Open an image or GIF to start ✨');
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+
+  // expose a little for the e2e test harness
+  window.SparkleBitch = {
+    openFile: openFile, state: state,
+    doPNG: doPNG, doGIF: doGIF,
+    exportGifBytes: function () {
+      return EXP.exportGIF(state.source, state.instances, state.params,
+        { maxLong: 240, matte: MATTE, lengthSec: 1, fps: 8 }, function () {});
+    }
+  };
+})();

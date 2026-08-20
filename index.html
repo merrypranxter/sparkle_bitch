@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Sparkle Bitch ✨</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%A8%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Sparkle&nbsp;Bitch <span class="star">✨</span></h1>
+    <p class="tag">a Y2K glitter engine — drop a pic or gif, hit sparkle, save</p>
+  </header>
+
+  <main class="app">
+    <!-- STAGE -->
+    <section class="stage-wrap">
+      <div id="stage" class="stage">
+        <canvas id="view" width="640" height="400"></canvas>
+        <div id="dropHint" class="drop-hint">
+          <div class="drop-emoji">✨🖼️✨</div>
+          <div class="drop-big">Drop an image or GIF here</div>
+          <div class="drop-small">or click to choose a file · videos work too (best effort)</div>
+        </div>
+      </div>
+      <div id="result" class="result hidden"></div>
+    </section>
+
+    <!-- CONTROLS -->
+    <aside class="panel">
+      <div class="row primary-row">
+        <button id="openBtn" class="btn">📂 Open</button>
+        <button id="sparkleBtn" class="btn btn-go">✨ Sparkle it</button>
+      </div>
+
+      <div class="row preset-row">
+        <span class="preset-label">Look:</span>
+        <button id="presetClassic" class="chip active">Classic Y2K</button>
+        <button id="presetAstral" class="chip">Astral Trash</button>
+      </div>
+
+      <div class="group">
+        <label class="ctl"><span>Intensity <b data-label-for="intensity"></b></span>
+          <input id="intensity" type="range" min="0" max="1" step="0.05" /></label>
+        <label class="ctl"><span>Max size <b data-label-for="maxSize"></b></span>
+          <input id="maxSize" type="range" min="10" max="120" step="1" /></label>
+        <label class="ctl"><span>Density <b data-label-for="density"></b></span>
+          <input id="density" type="range" min="0" max="1" step="0.05" /></label>
+        <label class="ctl"><span>Glow <b data-label-for="glow"></b></span>
+          <input id="glow" type="range" min="0" max="1" step="0.05" /></label>
+        <label class="ctl"><span>Color boost <b data-label-for="colorBoost"></b></span>
+          <input id="colorBoost" type="range" min="1" max="2.2" step="0.05" /></label>
+        <label class="ctl"><span>Speed <b data-label-for="speed"></b></span>
+          <input id="speed" type="range" min="1" max="6" step="1" /></label>
+      </div>
+
+      <div class="group two">
+        <label class="ctl"><span>Shapes</span>
+          <select id="styleMix">
+            <option value="mixed">Mixed</option>
+            <option value="stars">Stars</option>
+            <option value="sparkles">Sparkles</option>
+            <option value="hearts">Hearts</option>
+            <option value="icons">Icons</option>
+          </select></label>
+        <label class="ctl"><span>Colors</span>
+          <select id="colorMode">
+            <option value="auto">From photo</option>
+            <option value="palette">Palette</option>
+            <option value="white">White</option>
+          </select></label>
+      </div>
+
+      <div class="group export">
+        <div class="export-opts">
+          <label class="ctl mini"><span>Secs <b data-label-for="lengthSec"></b></span>
+            <input id="lengthSec" type="range" min="1" max="5" step="1" /></label>
+          <label class="ctl mini"><span>FPS <b data-label-for="fps"></b></span>
+            <input id="fps" type="range" min="8" max="24" step="1" /></label>
+        </div>
+        <div class="row export-row">
+          <button id="exportPng" class="btn btn-out">🖼️ PNG</button>
+          <button id="exportGif" class="btn btn-out">🎞️ GIF</button>
+          <button id="exportVideo" class="btn btn-out">📹 Video</button>
+        </div>
+        <div id="progress" class="progress hidden"><div id="progressBar" class="progress-bar"></div></div>
+        <div id="status" class="status"></div>
+      </div>
+
+      <details class="adv">
+        <summary>Advanced</summary>
+        <div class="adv-body">
+          <div class="tool-row">
+            <span>Place:</span>
+            <label><input type="radio" name="tool" id="toolAuto" checked /> Auto</label>
+            <label><input type="radio" name="tool" id="toolBrush" /> Brush</label>
+            <label><input type="radio" name="tool" id="toolPen" /> Pen</label>
+            <button id="clearSel" class="btn tiny">Clear</button>
+          </div>
+          <p class="hint">Brush = only sparkle where you paint · Pen = force sparkles anywhere</p>
+          <label class="ctl"><span>Brush size <b data-label-for="brushSize"></b></span>
+            <input id="brushSize" type="range" min="10" max="140" step="1" value="40" /></label>
+          <label class="ctl"><span>Bright threshold <b data-label-for="lumaThreshold"></b></span>
+            <input id="lumaThreshold" type="range" min="0" max="255" step="1" /></label>
+          <label class="ctl"><span>Contrast threshold <b data-label-for="contrastThreshold"></b></span>
+            <input id="contrastThreshold" type="range" min="0" max="255" step="1" /></label>
+          <div class="tool-row">
+            <label><input type="checkbox" id="hueCycle" /> Hue shimmer</label>
+            <label><input type="checkbox" id="spin" /> Spin</label>
+            <button id="seedBtn" class="btn tiny">🎲 Re-roll</button>
+          </div>
+        </div>
+      </details>
+    </aside>
+  </main>
+
+  <input id="fileInput" type="file" accept="image/*,video/*" hidden />
+
+  <!-- engine (classic scripts so it runs straight from file://) -->
+  <script src="js/util.js"></script>
+  <script src="js/anim.js"></script>
+  <script src="js/presets.js"></script>
+  <script src="js/analyze.js"></script>
+  <script src="js/sparkles.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/gif-encode.js"></script>
+  <script src="js/gif-decode.js"></script>
+  <script src="js/media.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
