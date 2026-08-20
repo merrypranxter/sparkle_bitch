@@ -11,7 +11,9 @@
 
   var state = {
     mode: 'image',      // 'image' | 'text'
-    source: null,
+    source: null,       // active source (points at imageSource or textSource)
+    imageSource: null,  // last opened image/gif/video (kept across tab switches)
+    textSource: null,   // last built glitter-text source
     params: PRE.defaults(),
     centers: [],
     penCenters: [],
@@ -91,7 +93,8 @@
     state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed);
   }
   function rebuildText() {
-    state.source = MED.makeTextSource(state.textOpts);
+    state.textSource = MED.makeTextSource(state.textOpts);
+    state.source = state.textSource;
     view.width = state.source.width; view.height = state.source.height;
     document.body.classList.add('has-image');
     buildGlitterField();
@@ -150,7 +153,8 @@
     if (!file) return;
     state.busy = true; setStatus('Loading ' + (file.name || 'file') + '…'); setProgress(null);
     MED.loadFromFile(file, 700).then(function (src) {
-      if (state.source && state.source.revoke) state.source.revoke();
+      if (state.imageSource && state.imageSource.revoke) state.imageSource.revoke();
+      state.imageSource = src;
       state.source = src;
       state.mode = 'image'; applyModeUI();
       // reset selection
@@ -211,7 +215,7 @@
 
   var drawing = false, lastPen = null;
   function onDown(ev) {
-    if (!state.source || state.tool === 'auto') return;
+    if (!state.source || state.mode !== 'image' || state.tool === 'auto') return;
     ev.preventDefault(); drawing = true; lastPen = null;
     var n = pointerToNorm(ev);
     if (state.tool === 'brush') paintMask(n.nx, n.ny);
@@ -315,8 +319,19 @@
   function setMode(mode) {
     state.mode = mode; applyModeUI();
     if (mode === 'text') {
+      // never paint on a text canvas — drop back to the Auto tool
+      state.tool = 'auto'; if ($('toolAuto')) $('toolAuto').checked = true;
+      view.classList.remove('painting');
       rebuildText();
-    } else if (!state.source || state.source.kind === 'text') {
+    } else if (state.imageSource) {
+      // restore the previously loaded image/gif/video instead of losing it
+      state.source = state.imageSource;
+      var sz = EXP.fitSize(state.source.width, state.source.height, 960);
+      view.width = sz.w; view.height = sz.h;
+      document.body.classList.add('has-image');
+      buildGlitterField();
+      setStatus(state.source.kind.toUpperCase() + ' ' + state.source.width + '×' + state.source.height);
+    } else {
       state.source = null; document.body.classList.remove('has-image'); setStatus('Open an image or GIF ✨');
     }
   }

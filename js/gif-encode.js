@@ -206,6 +206,10 @@
     // (glitter TEXT on a transparent background exports as a sticker).
     var wantTransparent = !!opts.transparent;
     var useTranspIndex = diff || wantTransparent;
+    // Transparent output uses disposal=2 (restore-to-background) with full,
+    // independent frames — the inter-frame diff (disposal=1 "leave") would let a
+    // moving opaque region smear, since newly-transparent pixels can't clear.
+    if (wantTransparent) diff = false;
     var maxColors = Math.min(opts.maxColors || 256, useTranspIndex ? 255 : 256);
 
     var pal = buildPalette(frames, w, h, maxColors);
@@ -259,8 +263,9 @@
 
       // graphic control extension
       var delay = Math.max(2, Math.round((frames[f].delay || 100) / 10));
+      var disposal = wantTransparent ? 2 : 1; // 2 = restore to bg (no trails), 1 = leave
       gif.u8(0x21); gif.u8(0xf9); gif.u8(4);
-      gif.u8((1 << 2) | (useTransp ? 1 : 0)); // disposal=1 (leave), transp flag
+      gif.u8((disposal << 2) | (useTransp ? 1 : 0));
       gif.u16(delay);
       gif.u8(useTransp ? transparentIndex : 0);
       gif.u8(0);
