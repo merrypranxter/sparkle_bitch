@@ -271,6 +271,31 @@ async function poll(page, fn, timeout, label) {
     ok(modeSafe.restored === 'image', 'fix: image preserved after Text round-trip (no reopen)');
     ok(modeSafe.tool === 'auto', 'fix: paint tool reset to Auto in Text mode (no crash on click)');
 
+    // ---- FONTS: grouped picker + a bundled pixel font renders in-browser ----
+    const fontUI = await page.evaluate(() => {
+      var sel = document.getElementById('textFont');
+      return { groups: sel.querySelectorAll('optgroup').length, opts: sel.querySelectorAll('option').length };
+    });
+    ok(fontUI.groups >= 6, 'fonts: picker is grouped (' + fontUI.groups + ' groups)');
+    ok(fontUI.opts >= 25, 'fonts: many fonts in the picker (' + fontUI.opts + ')');
+
+    const pixelFont = await page.evaluate(async () => {
+      var S = window.SparkleBitch;
+      S.setMode('text');
+      S.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });   // reset from the strength test
+      S.setText({ text: 'AB', size: 90, font: 'pressstart', outline: 0, shadow: false });
+      await document.fonts.load('64px "Press Start 2P"');
+      await new Promise(function (r) { setTimeout(r, 150); });
+      S.setText({ font: 'pressstart' });               // rebuild mask now the font is ready
+      await new Promise(function (r) { setTimeout(r, 200); });
+      var cv = S.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, opaque = 0;
+      for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) opaque++;
+      return { opaque: opaque, loaded: document.fonts.check('64px "Press Start 2P"') };
+    });
+    ok(pixelFont.loaded, 'fonts: bundled Press Start 2P loaded in-browser');
+    ok(pixelFont.opaque > 200, 'fonts: bundled font renders letterforms (' + pixelFont.opaque + ' px)');
+
     // ---- VIDEO SUPPORT ----
     const vid = await page.evaluate(() => ({ supported: SB.exporter.videoSupported() }));
     if (vid.supported) ok(true, 'video: MediaRecorder available in this browser');

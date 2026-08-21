@@ -89,6 +89,22 @@ GIF always will.
 
 ---
 
+## Fonts
+
+Glitter **Text** mode ships a big grouped font picker: web-safe **System** fonts
+plus **23 bundled** open-licensed Y2K faces (all OFL / Apache 2.0, so they work
+offline with no downloads) across Pixel, Techno, Bubble, Retro, Gothic and
+Handwriting — Press Start 2P, VT323, Orbitron, Michroma, Bungee, Baloo, Monoton,
+UnifrakturCook (blackletter), Permanent Marker, and more. See
+[`fonts/README.md`](fonts/README.md) for the full list and how to add more.
+
+**Want a font that isn't listed** (Eurostile, Neuropol, a DaFont find…)? In Text
+mode click **＋ Load font file** and pick any `.ttf` / `.otf` / `.woff` you've
+downloaded — it loads instantly and shows up under **Your fonts** (session-only,
+nothing is uploaded).
+
+---
+
 ## Publish to GitHub Pages
 
 A workflow is already included (`.github/workflows/pages.yml`). One-time setup:

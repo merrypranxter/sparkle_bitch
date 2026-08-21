@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Sparkle Bitch ✨</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%A8%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="fonts/fonts.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="mode-image">
@@ -89,6 +90,10 @@
             <input id="textSize" type="range" min="32" max="200" step="2" /></label>
         </div>
         <div class="tool-row">
+          <button id="loadFontBtn" class="btn tiny">＋ Load font file</button>
+          <span class="hint">.ttf / .otf / .woff — use any font you download</span>
+        </div>
+        <div class="tool-row">
           <label><input type="checkbox" id="textBold" checked /> Bold</label>
           <label><input type="checkbox" id="textItalic" /> Italic</label>
           <label><input type="checkbox" id="textShadow" checked /> Shadow</label>
@@ -160,6 +165,7 @@
   </main>
 
   <input id="fileInput" type="file" accept="image/*,video/*" hidden />
+  <input id="fontFileInput" type="file" accept=".ttf,.otf,.woff,.woff2,font/*" hidden />
 
   <!-- engine (classic scripts so it runs straight from file://) -->
   <script src="js/util.js"></script>

@@ -164,6 +164,8 @@ input[type="color"] {
   border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
 }
 input[type="color"]:disabled { opacity: .4; cursor: not-allowed; }
+select optgroup { color: var(--pink); background: var(--panel); font-weight: 800; }
+select option { color: var(--ink); background: var(--bg); font-weight: 400; }
 
 /* ---- responsive: stack on narrow screens ---- */
 @media (max-width: 820px) {

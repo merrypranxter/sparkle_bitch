@@ -21,7 +21,7 @@
     rng: null,
     glitterField: null,
     textOpts: {
-      text: 'sparkle bitch', font: 'fat', size: 96, bold: true, italic: false,
+      text: 'sparkle bitch', font: 'arialblack', size: 96, bold: true, italic: false,
       outline: 4, outlineColor: '#3a0a2e', shadow: true, bg: null // null = transparent
     },
     maskCanvas: null,   // working-res canvas; painted = selected
@@ -92,13 +92,62 @@
     var d = refDims();
     state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed);
   }
-  function rebuildText() {
+  function buildTextNow() {
     state.textSource = MED.makeTextSource(state.textOpts);
     state.source = state.textSource;
     view.width = state.source.width; view.height = state.source.height;
     document.body.classList.add('has-image');
     buildGlitterField();
     setStatus('“' + state.textOpts.text + '” · ' + state.params.glitterStyle + ' glitter');
+  }
+  function rebuildText() {
+    // Build now (always fresh / correct size). If the chosen font's glyphs
+    // aren't loaded yet, load them and rebuild so the mask swaps from the
+    // fallback to the real font once it's ready.
+    buildTextNow();
+    if (document.fonts && document.fonts.load) {
+      var css = TXT.fontCss(state.textOpts);
+      try {
+        if (!document.fonts.check(css)) {
+          document.fonts.load(css).then(function () { if (state.mode === 'text') buildTextNow(); }, function () {});
+        }
+      } catch (e) {}
+    }
+  }
+
+  function populateFontSelect() {
+    var sel = $('textFont'); sel.innerHTML = '';
+    TXT.fontGroups().forEach(function (grp) {
+      var og = document.createElement('optgroup'); og.label = grp.label;
+      grp.fonts.forEach(function (f) {
+        var o = document.createElement('option'); o.value = f.id; o.textContent = f.label; og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    sel.value = state.textOpts.font;
+  }
+
+  // Load a user-supplied font file (FontFace API) and add it to the picker.
+  function onFontFile(file) {
+    if (!file) return;
+    if (typeof FontFace === 'undefined') { setStatus('⚠ This browser can’t load custom fonts'); return; }
+    var family = (file.name || 'My Font').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim() || 'My Font';
+    setStatus('Loading font “' + family + '”…');
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        new FontFace(family, reader.result).load().then(function (f) {
+          document.fonts.add(f);
+          var id = TXT.registerCustom(family);
+          state.textOpts.font = id;
+          populateFontSelect();
+          if (state.mode !== 'text') setMode('text'); else rebuildText();
+          setStatus('Loaded font “' + family + '” ✨');
+        }, function () { setStatus('⚠ Could not read that font file'); });
+      } catch (e) { setStatus('⚠ Could not read that font file'); }
+    };
+    reader.onerror = function () { setStatus('⚠ Could not read that font file'); };
+    reader.readAsArrayBuffer(file);
   }
   function renderExtras() {
     if (state.mode === 'text' && state.source && state.source.textRender) {
@@ -463,7 +512,12 @@
     });
 
     // text controls
-    populateSelect('textFont', TXT.fontList());
+    populateFontSelect();
+    $('loadFontBtn').addEventListener('click', function () { $('fontFileInput').click(); });
+    $('fontFileInput').addEventListener('change', function () {
+      if (this.files && this.files[0]) onFontFile(this.files[0]);
+      this.value = '';
+    });
     bindText('textInput', 'text'); bindText('textFont', 'font', 'change');
     bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
     bindText('textItalic', 'italic', 'change'); bindText('textOutline', 'outline');
