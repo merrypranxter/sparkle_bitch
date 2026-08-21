@@ -132,7 +132,9 @@
   function onFontFile(file) {
     if (!file) return;
     if (typeof FontFace === 'undefined') { setStatus('⚠ This browser can’t load custom fonts'); return; }
-    var family = (file.name || 'My Font').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim() || 'My Font';
+    // one cleaned name for BOTH the FontFace and the registry, so they match
+    // and quotes in a filename can't break the CSS/canvas font strings.
+    var family = TXT.cleanFamily((file.name || 'My Font').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' '));
     setStatus('Loading font “' + family + '”…');
     var reader = new FileReader();
     reader.onload = function () {

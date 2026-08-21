@@ -284,10 +284,8 @@ async function poll(page, fn, timeout, label) {
       S.setMode('text');
       S.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });   // reset from the strength test
       S.setText({ text: 'AB', size: 90, font: 'pressstart', outline: 0, shadow: false });
-      await document.fonts.load('64px "Press Start 2P"');
-      await new Promise(function (r) { setTimeout(r, 150); });
-      S.setText({ font: 'pressstart' });               // rebuild mask now the font is ready
-      await new Promise(function (r) { setTimeout(r, 200); });
+      await document.fonts.load('64px "Press Start 2P"');   // resolves when the face is ready
+      S.setText({ font: 'pressstart' });                    // sync rebuild now uses the loaded font
       var cv = S.renderStillCanvas();
       var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, opaque = 0;
       for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) opaque++;
