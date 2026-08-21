@@ -23,7 +23,9 @@
     textOpts: {
       text: 'sparkle bitch', font: 'arialblack', size: 96, bold: true, italic: false,
       align: 'center', leading: 1.3,
-      outline: 4, outlineColor: '#3a0a2e', shadow: true, bg: null // null = transparent
+      // layered outlines, innermost first; each is a solid colour OR a glitter style
+      outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }],
+      shadow: true, bg: null // null = transparent
     },
     maskCanvas: null,   // working-res canvas; painted = selected
     maskActive: false,
@@ -151,6 +153,49 @@
     };
     reader.onerror = function () { setStatus('⚠ Could not read that font file'); };
     reader.readAsArrayBuffer(file);
+  }
+
+  // ---- layered outlines UI ----
+  function fillOutlineType(sel, current) {
+    sel.innerHTML = '';
+    var solid = document.createElement('option'); solid.value = 'color'; solid.textContent = 'Solid'; sel.appendChild(solid);
+    var og = document.createElement('optgroup'); og.label = 'Glitter';
+    GL.styleList().forEach(function (s) { var o = document.createElement('option'); o.value = s.id; o.textContent = s.label; og.appendChild(o); });
+    sel.appendChild(og);
+    sel.value = current;
+  }
+  function renderOutlineList() {
+    var box = $('outlineList'); if (!box) return;
+    box.innerHTML = '';
+    state.textOpts.outlines.forEach(function (layer) {
+      var row = document.createElement('div'); row.className = 'outline-row';
+      var ty = document.createElement('select');
+      fillOutlineType(ty, layer.kind === 'glitter' ? (layer.glitter || 'silver') : 'color');
+      var col = document.createElement('input'); col.type = 'color'; col.value = layer.color || '#3a0a2e';
+      col.style.visibility = layer.kind === 'glitter' ? 'hidden' : 'visible';
+      var w = document.createElement('input'); w.type = 'range'; w.min = '2'; w.max = '26'; w.step = '1'; w.value = layer.width; w.title = 'width';
+      var rm = document.createElement('button'); rm.className = 'btn tiny'; rm.textContent = '✕'; rm.title = 'remove';
+      ty.addEventListener('change', function () {
+        if (ty.value === 'color') { layer.kind = 'color'; col.style.visibility = 'visible'; }
+        else { layer.kind = 'glitter'; layer.glitter = ty.value; col.style.visibility = 'hidden'; }
+        if (state.mode === 'text') rebuildText();
+      });
+      col.addEventListener('input', function () { layer.color = col.value; if (state.mode === 'text') rebuildText(); });
+      w.addEventListener('input', function () { layer.width = parseFloat(w.value); if (state.mode === 'text') rebuildText(); });
+      rm.addEventListener('click', function () {
+        var i = state.textOpts.outlines.indexOf(layer);
+        if (i >= 0) state.textOpts.outlines.splice(i, 1);
+        renderOutlineList(); if (state.mode === 'text') rebuildText();
+      });
+      row.appendChild(ty); row.appendChild(col); row.appendChild(w); row.appendChild(rm);
+      box.appendChild(row);
+    });
+  }
+  function addOutline() {
+    var palette = ['#4fe3ff', '#ff5fd2', '#b6ff5a', '#ffd45c', '#ffffff'];
+    var c = palette[state.textOpts.outlines.length % palette.length];
+    state.textOpts.outlines.push({ width: 6, kind: 'color', color: c, glitter: 'neon' });
+    renderOutlineList(); if (state.mode === 'text') rebuildText();
   }
   function renderExtras() {
     if (state.mode === 'text' && state.source && state.source.textRender) {
@@ -416,7 +461,7 @@
     setVal('textInput', t.text); setVal('textFont', t.font); setVal('textSize', t.size);
     setVal('textAlign', t.align); setVal('textLeading', t.leading);
     $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
-    setVal('textOutline', t.outline); setVal('textOutlineColor', t.outlineColor);
+    renderOutlineList();
     $('textShadow').checked = !!t.shadow;
     $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
     $('textBgColor').disabled = !t.bg;
@@ -524,9 +569,10 @@
     });
     bindText('textInput', 'text'); bindText('textFont', 'font', 'change');
     bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
-    bindText('textItalic', 'italic', 'change'); bindText('textOutline', 'outline');
-    bindText('textOutlineColor', 'outlineColor', 'change'); bindText('textShadow', 'shadow', 'change');
+    bindText('textItalic', 'italic', 'change'); bindText('textShadow', 'shadow', 'change');
     bindText('textAlign', 'align', 'change'); bindText('textLeading', 'leading');
+    renderOutlineList();
+    $('addOutlineBtn').addEventListener('click', addOutline);
     $('textTransparent').addEventListener('change', function () {
       state.textOpts.bg = $('textTransparent').checked ? null : $('textBgColor').value;
       $('textBgColor').disabled = $('textTransparent').checked;

@@ -7,9 +7,11 @@ modes:
 - **Image / GIF:** drop in a picture or GIF; it finds the bright/high-contrast
   spots, drops in animated sparkle sprites that match the local colour and size,
   and (optionally) lays animated glitter over the photo.
-- **Text:** type words and get **animated glitter text** — letterforms filled
-  with shimmering "dry glitter", on a transparent background so you can paste it
-  anywhere.
+- **Text:** type words (multi-line, with left/center/right align + line-spacing)
+  and get **animated glitter text** — letterforms filled with shimmering "dry
+  glitter" in 19 styles (rainbow, confetti, all-neon, unicorn, galaxy, fire…),
+  on a transparent background so you can paste it anywhere. Add **stackable
+  outlines**, each its own solid colour *or* its own glitter.
 
 Everything exports as a **PNG**, **animated GIF**, or **video**.
 

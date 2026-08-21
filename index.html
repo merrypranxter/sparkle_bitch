@@ -108,11 +108,10 @@
           <label><input type="checkbox" id="textItalic" /> Italic</label>
           <label><input type="checkbox" id="textShadow" checked /> Shadow</label>
         </div>
-        <div class="group two">
-          <label class="ctl"><span>Outline <b data-label-for="textOutline"></b></span>
-            <input id="textOutline" type="range" min="0" max="16" step="1" /></label>
-          <label class="ctl"><span>Outline color</span>
-            <input id="textOutlineColor" type="color" value="#3a0a2e" /></label>
+        <div class="group">
+          <div class="group-title">Outlines <span class="hint">— stack them; each solid or glitter</span></div>
+          <div id="outlineList" class="outline-list"></div>
+          <button id="addOutlineBtn" class="btn tiny">＋ Add outline</button>
         </div>
         <div class="tool-row">
           <label><input type="checkbox" id="textTransparent" checked /> Transparent background</label>

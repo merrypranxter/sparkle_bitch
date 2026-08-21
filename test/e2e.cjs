@@ -182,7 +182,7 @@ async function poll(page, fn, timeout, label) {
     // ---- TEXT MODE: glitter text, transparent background, export ----
     await page.evaluate(async () => {
       window.SparkleBitch.setMode('text');
-      window.SparkleBitch.setText({ text: 'SPARKLE BITCH', size: 96, outline: 5 });
+      window.SparkleBitch.setText({ text: 'SPARKLE BITCH', size: 96, outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }] });
       window.SparkleBitch.setGlitter({ glitterStyle: 'rainbow', glitterDensity: 0.7 });
     });
     await poll(page, () => {
@@ -237,7 +237,7 @@ async function poll(page, fn, timeout, label) {
     // what's measured; otherwise the shadow floors the interior alpha.)
     const strength = await page.evaluate(() => {
       var SBM = window.SparkleBitch;
-      SBM.setMode('text'); SBM.setText({ text: 'AB', size: 120, shadow: false, outline: 0 });
+      SBM.setMode('text'); SBM.setText({ text: 'AB', size: 120, shadow: false, outlines: [] });
       SBM.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });
       function opaque(cv) { var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = 0; for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) n++; return n; }
       var hi = opaque(SBM.renderStillCanvas());
@@ -283,7 +283,7 @@ async function poll(page, fn, timeout, label) {
       var S = window.SparkleBitch;
       S.setMode('text');
       S.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });   // reset from the strength test
-      S.setText({ text: 'AB', size: 90, font: 'pressstart', outline: 0, shadow: false });
+      S.setText({ text: 'AB', size: 90, font: 'pressstart', outlines: [], shadow: false });
       await document.fonts.load('64px "Press Start 2P"');   // resolves when the face is ready
       S.setText({ font: 'pressstart' });                    // sync rebuild now uses the loaded font
       var cv = S.renderStillCanvas();
@@ -298,7 +298,7 @@ async function poll(page, fn, timeout, label) {
     const multi = await page.evaluate(() => {
       var S = window.SparkleBitch;
       S.setMode('text'); S.setGlitter({ glitterIntensity: 1 });
-      S.setText({ text: 'line one\nline two\nthree', font: 'arialblack', size: 60, align: 'left', leading: 1.3, outline: 0, shadow: false });
+      S.setText({ text: 'line one\nline two\nthree', font: 'arialblack', size: 60, align: 'left', leading: 1.3, outlines: [], shadow: false });
       var h1 = S.state.source.height;
       S.setText({ leading: 2.2 });
       var h2 = S.state.source.height;               // more leading -> taller canvas
@@ -308,6 +308,32 @@ async function poll(page, fn, timeout, label) {
     ok(multi.lines === 3, 'text: multi-line via newlines (' + multi.lines + ' lines)');
     ok(multi.h2 > multi.h1 + 20, 'text: line-spacing (leading) changes height (' + multi.h1 + ' -> ' + multi.h2 + ')');
     ok(multi.align === 'right', 'text: alignment control applies');
+
+    // ---- new multi-colour glitter styles ----
+    const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
+    ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
+    ok(styles.length >= 18, 'glitter: expanded style set (' + styles.length + ' styles)');
+
+    // ---- layered sparkle outlines ----
+    const outlines = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setGlitter({ glitterStyle: 'silver', glitterIntensity: 1 });
+      S.setText({ text: 'A', size: 120, outlines: [], shadow: false });
+      var noneW = S.state.source.width;
+      S.setText({ outlines: [
+        { width: 8, kind: 'glitter', glitter: 'neon' },   // inner: glitter outline
+        { width: 8, kind: 'color', color: '#00e5ff' }     // outer: solid cyan
+      ] });
+      var withW = S.state.source.width;
+      var layers = S.state.source.textRender.layers.length;
+      var cv = S.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, cyan = 0;
+      for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180 && d[i] < 120 && d[i + 1] > 170 && d[i + 2] > 200) cyan++;
+      return { noneW: noneW, withW: withW, layers: layers, cyan: cyan };
+    });
+    ok(outlines.withW > outlines.noneW, 'outlines: layers widen the canvas (' + outlines.noneW + ' -> ' + outlines.withW + ')');
+    ok(outlines.layers === 2, 'outlines: two outline layers built');
+    ok(outlines.cyan > 100, 'outlines: solid cyan outer outline is visible (' + outlines.cyan + ' px)');
 
     // ---- VIDEO SUPPORT ----
     const vid = await page.evaluate(() => ({ supported: SB.exporter.videoSupported() }));

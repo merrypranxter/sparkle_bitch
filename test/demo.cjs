@@ -87,12 +87,13 @@ function waitServer() {
   await exportBoth('astral');
 
   // ---- glitter TEXT demos ----
-  async function textDemo(tag, text, style, bg, font) {
+  async function textDemo(tag, text, style, bg, font, outlines) {
     await page.evaluate(function (a) {
       window.SparkleBitch.setMode('text');
-      window.SparkleBitch.setText({ text: a.text, size: 120, outline: 6, font: a.font, bold: true, shadow: true, bg: a.bg });
+      window.SparkleBitch.setText({ text: a.text, size: 120, font: a.font, bold: true, shadow: true, bg: a.bg,
+        outlines: a.outlines || [{ width: 6, kind: 'color', color: '#3a0a2e' }] });
       window.SparkleBitch.setGlitter({ glitterStyle: a.style, glitterDensity: 0.8, glitterIntensity: 1 });
-    }, { text: text, style: style, bg: bg || null, font: font || 'arialblack' });
+    }, { text: text, style: style, bg: bg || null, font: font || 'arialblack', outlines: outlines || null });
     await page.waitForFunction(() => window.SparkleBitch.state.mode === 'text' && window.SparkleBitch.state.glitterField);
     await page.evaluate(() => document.fonts.ready);
     await sleep(500); // let the webfont load + the mask rebuild with real glyphs
@@ -116,6 +117,13 @@ function waitServer() {
   await textDemo('text-bubble', 'glitter', 'pink', '#0b0713', 'bungee');      // bubble / signage
   await textDemo('text-goth', 'bitch', 'silver', '#0b0713', 'blackletter');   // blackletter
   await textDemo('text-gold', 'sparkle bitch', 'gold', null, 'arialblack');   // transparent sticker
+  await textDemo('text-neon', 'NEON', 'neon', '#08040f', 'arialblack');       // all-neon glitter
+  // layered sparkle outlines: neon fill + rainbow glitter outline + 2 solid rings
+  await textDemo('text-layers', 'sparkle', 'neon', '#08040f', 'fredoka', [
+    { width: 7, kind: 'glitter', glitter: 'rainbow' },
+    { width: 6, kind: 'color', color: '#ff5fd2' },
+    { width: 6, kind: 'color', color: '#4fe3ff' }
+  ]);
 
   await browser.close();
   server.kill('SIGTERM');
