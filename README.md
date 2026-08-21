@@ -102,8 +102,9 @@ UnifrakturCook (blackletter), Permanent Marker, and more. See
 
 **Want a font that isn't listed** (Eurostile, Neuropol, a DaFont find…)? In Text
 mode click **＋ Load font file** and pick any `.ttf` / `.otf` / `.woff` you've
-downloaded — it loads instantly and shows up under **Your fonts** (session-only,
-nothing is uploaded).
+downloaded — it loads instantly and shows up under **Your fonts**. It's
+**remembered across visits** (saved in your browser's IndexedDB; nothing is
+uploaded anywhere).
 
 ---
 

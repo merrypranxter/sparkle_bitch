@@ -131,28 +131,45 @@
   }
 
   // Load a user-supplied font file (FontFace API) and add it to the picker.
+  // Load a font from raw bytes, add it to the picker, select it, and (optionally)
+  // remember it in IndexedDB so it survives a reload.
+  function loadFontFromBuffer(family, buffer, persist) {
+    family = TXT.cleanFamily(family);   // one clean name for FontFace + registry
+    return new FontFace(family, buffer).load().then(function (f) {
+      document.fonts.add(f);
+      var id = TXT.registerCustom(family);
+      state.textOpts.font = id;
+      populateFontSelect();
+      if (persist && SB.fontStore) { try { SB.fontStore.put(family, buffer.slice(0)).catch(function () {}); } catch (e) {} }
+      if (state.mode !== 'text') setMode('text'); else rebuildText();
+      setStatus('Loaded font “' + family + '” ✨');
+      return id;
+    });
+  }
   function onFontFile(file) {
     if (!file) return;
     if (typeof FontFace === 'undefined') { setStatus('⚠ This browser can’t load custom fonts'); return; }
-    // one cleaned name for BOTH the FontFace and the registry, so they match
-    // and quotes in a filename can't break the CSS/canvas font strings.
-    var family = TXT.cleanFamily((file.name || 'My Font').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' '));
-    setStatus('Loading font “' + family + '”…');
+    var family = (file.name || 'My Font').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ');
+    setStatus('Loading font “' + TXT.cleanFamily(family) + '”…');
     var reader = new FileReader();
     reader.onload = function () {
-      try {
-        new FontFace(family, reader.result).load().then(function (f) {
-          document.fonts.add(f);
-          var id = TXT.registerCustom(family);
-          state.textOpts.font = id;
-          populateFontSelect();
-          if (state.mode !== 'text') setMode('text'); else rebuildText();
-          setStatus('Loaded font “' + family + '” ✨');
-        }, function () { setStatus('⚠ Could not read that font file'); });
-      } catch (e) { setStatus('⚠ Could not read that font file'); }
+      loadFontFromBuffer(family, reader.result, true).catch(function () { setStatus('⚠ Could not read that font file'); });
     };
     reader.onerror = function () { setStatus('⚠ Could not read that font file'); };
     reader.readAsArrayBuffer(file);
+  }
+  // Re-load fonts saved on a previous visit (persisted in IndexedDB), silently.
+  function loadStoredFonts() {
+    if (!SB.fontStore || typeof FontFace === 'undefined') return;
+    SB.fontStore.all().then(function (list) {
+      list.forEach(function (rec) {
+        try {
+          new FontFace(rec.family, rec.buffer).load().then(function (f) {
+            document.fonts.add(f); TXT.registerCustom(rec.family); populateFontSelect();
+          }, function () {});
+        } catch (e) {}
+      });
+    }).catch(function () {});
   }
 
   // ---- layered outlines UI ----
@@ -567,6 +584,7 @@
       if (this.files && this.files[0]) onFontFile(this.files[0]);
       this.value = '';
     });
+    loadStoredFonts();   // bring back fonts saved on a previous visit
     bindText('textInput', 'text'); bindText('textFont', 'font', 'change');
     bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
     bindText('textItalic', 'italic', 'change'); bindText('textShadow', 'shadow', 'change');
@@ -625,6 +643,7 @@
     openFile: openFile, state: state,
     doPNG: doPNG, doGIF: doGIF,
     setMode: setMode,
+    loadFontFromBuffer: loadFontFromBuffer,
     setText: function (o) { for (var k in o) state.textOpts[k] = o[k]; syncControls(); if (state.mode === 'text') rebuildText(); },
     setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); },
     renderStillCanvas: function () { return EXP.renderStill(state.source, state.instances, state.params, 640, currentMatte(), renderExtras()); },

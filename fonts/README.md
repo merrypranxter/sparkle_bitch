@@ -31,5 +31,5 @@ You don't need to touch the code: in the app, switch to **Text** mode and click
 **＋ Load font file**, then pick any `.ttf` / `.otf` / `.woff` you downloaded
 (e.g. from [DaFont](https://www.dafont.com) or
 [FontSpace](https://www.fontspace.com)). It loads instantly and appears in the
-picker under **Your fonts**. (Loaded fonts live in your browser session only —
-they aren't uploaded anywhere.)
+picker under **Your fonts**, and it's remembered across visits (saved in your
+browser's IndexedDB — nothing is uploaded anywhere).

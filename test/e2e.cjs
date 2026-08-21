@@ -340,6 +340,31 @@ async function poll(page, fn, timeout, label) {
     if (vid.supported) ok(true, 'video: MediaRecorder available in this browser');
     else warn('video: MediaRecorder not available (best-effort feature)');
 
+    // ---- custom fonts persist across reloads (IndexedDB) ----
+    const optionHas = function () {
+      return Array.prototype.some.call(document.querySelectorAll('#textFont option'),
+        function (o) { return o.textContent === 'My Persist Font'; });
+    };
+    const loaded = await page.evaluate(async (has) => {
+      var buf = await (await fetch('fonts/vt323.woff2')).arrayBuffer();
+      await window.SparkleBitch.loadFontFromBuffer('My Persist Font', buf, true);
+      await new Promise(function (r) { setTimeout(r, 60); });   // let the IDB put settle
+      return (new Function('return (' + has + ')()'))();
+    }, optionHas.toString());
+    ok(loaded, 'fonts: uploaded font appears in the picker');
+
+    await page.reload({ waitUntil: 'load' });
+    await poll(page, () => !!window.SparkleBitch && !!window.SB, 6000, 'reload init');
+    const remembered = await page.evaluate((has) => {
+      return new Promise(function (res) {
+        var check = new Function('return (' + has + ')()'), tries = 0;
+        var t = setInterval(function () {
+          if (check() || ++tries > 60) { clearInterval(t); res(check()); }
+        }, 50);
+      });
+    }, optionHas.toString());
+    ok(remembered, 'fonts: custom font is REMEMBERED after a page reload');
+
     ok(pageErrors.length === 0, 'no uncaught page errors' + (pageErrors.length ? ': ' + pageErrors[0] : ''));
   } catch (e) {
     failures++; console.error('  ✗ EXCEPTION: ' + e.message);
