@@ -22,6 +22,7 @@
     glitterField: null,
     textOpts: {
       text: 'sparkle bitch', font: 'arialblack', size: 96, bold: true, italic: false,
+      align: 'center', leading: 1.3,
       outline: 4, outlineColor: '#3a0a2e', shadow: true, bg: null // null = transparent
     },
     maskCanvas: null,   // working-res canvas; painted = selected
@@ -411,6 +412,7 @@
     setVal('glitterIntensity', p.glitterIntensity); $('glitterFill').checked = !!p.glitterOnImage;
     // text
     setVal('textInput', t.text); setVal('textFont', t.font); setVal('textSize', t.size);
+    setVal('textAlign', t.align); setVal('textLeading', t.leading);
     $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
     setVal('textOutline', t.outline); setVal('textOutlineColor', t.outlineColor);
     $('textShadow').checked = !!t.shadow;
@@ -522,6 +524,7 @@
     bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
     bindText('textItalic', 'italic', 'change'); bindText('textOutline', 'outline');
     bindText('textOutlineColor', 'outlineColor', 'change'); bindText('textShadow', 'shadow', 'change');
+    bindText('textAlign', 'align', 'change'); bindText('textLeading', 'leading');
     $('textTransparent').addEventListener('change', function () {
       state.textOpts.bg = $('textTransparent').checked ? null : $('textBgColor').value;
       $('textBgColor').disabled = $('textTransparent').checked;

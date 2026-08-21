@@ -296,6 +296,21 @@ async function poll(page, fn, timeout, label) {
     ok(pixelFont.loaded, 'fonts: bundled Press Start 2P loaded in-browser');
     ok(pixelFont.opaque > 200, 'fonts: bundled font renders letterforms (' + pixelFont.opaque + ' px)');
 
+    // ---- multi-line text + alignment + leading ----
+    const multi = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setGlitter({ glitterIntensity: 1 });
+      S.setText({ text: 'line one\nline two\nthree', font: 'arialblack', size: 60, align: 'left', leading: 1.3, outline: 0, shadow: false });
+      var h1 = S.state.source.height;
+      S.setText({ leading: 2.2 });
+      var h2 = S.state.source.height;               // more leading -> taller canvas
+      S.setText({ align: 'right' });
+      return { h1: h1, h2: h2, lines: S.state.textOpts.text.split('\n').length, align: S.state.textOpts.align };
+    });
+    ok(multi.lines === 3, 'text: multi-line via newlines (' + multi.lines + ' lines)');
+    ok(multi.h2 > multi.h1 + 20, 'text: line-spacing (leading) changes height (' + multi.h1 + ' -> ' + multi.h2 + ')');
+    ok(multi.align === 'right', 'text: alignment control applies');
+
     // ---- VIDEO SUPPORT ----
     const vid = await page.evaluate(() => ({ supported: SB.exporter.videoSupported() }));
     if (vid.supported) ok(true, 'video: MediaRecorder available in this browser');

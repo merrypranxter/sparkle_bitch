@@ -82,12 +82,22 @@
 
       <!-- TEXT MODE -->
       <div class="mode-text-only text-controls">
-        <label class="ctl"><span>Your text</span>
-          <input id="textInput" type="text" value="sparkle bitch" maxlength="60" /></label>
+        <label class="ctl"><span>Your text <span class="hint">— Enter = new line</span></span>
+          <textarea id="textInput" rows="2" maxlength="140">sparkle bitch</textarea></label>
         <div class="group two">
           <label class="ctl"><span>Font</span><select id="textFont"></select></label>
           <label class="ctl"><span>Size <b data-label-for="textSize"></b></span>
             <input id="textSize" type="range" min="32" max="200" step="2" /></label>
+        </div>
+        <div class="group two">
+          <label class="ctl"><span>Align</span>
+            <select id="textAlign">
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select></label>
+          <label class="ctl"><span>Line spacing <b data-label-for="textLeading"></b></span>
+            <input id="textLeading" type="range" min="0.9" max="2.4" step="0.05" /></label>
         </div>
         <div class="tool-row">
           <button id="loadFontBtn" class="btn tiny">＋ Load font file</button>

@@ -155,10 +155,11 @@ body.mode-text .mode-image-only { display: none !important; }
 .group-title { font-weight: 800; color: var(--ink); font-size: 13px; }
 .ctl.check { flex-direction: row; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
 .ctl.check input { width: auto; }
-input[type="text"] {
+input[type="text"], textarea {
   background: var(--bg); color: var(--ink); border: 1px solid var(--line);
   border-radius: 8px; padding: 9px; font-size: 15px; width: 100%;
 }
+textarea { resize: vertical; min-height: 42px; font-family: inherit; line-height: 1.3; }
 input[type="color"] {
   width: 100%; height: 30px; padding: 2px; background: var(--bg);
   border: 1px solid var(--line); border-radius: 8px; cursor: pointer;

@@ -113,7 +113,9 @@
     var size = o.size || 72;
     var outline = o.outline || 0;
     var lines = text.split('\n');
-    var lineH = Math.ceil(size * 1.32);
+    var leading = o.leading || 1.32;                 // line-spacing multiplier
+    var lineH = Math.ceil(size * leading);
+    var align = (o.align === 'left' || o.align === 'right') ? o.align : 'center';
     var pad = Math.ceil(size * 0.35) + outline + (o.shadow ? Math.ceil(size * 0.18) : 0) + 8;
 
     var meas = newCanvas(8, 8).getContext('2d');
@@ -123,13 +125,14 @@
     for (var i = 0; i < lines.length; i++) maxW = Math.max(maxW, Math.ceil(meas.measureText(lines[i] || ' ').width));
     var W = maxW + pad * 2;
     var H = lineH * lines.length + pad * 2;
+    var alignX = align === 'left' ? pad : align === 'right' ? (W - pad) : (W / 2);
 
     function setup(ctx) {
       ctx.font = fontString(o);
       if ('letterSpacing' in ctx) ctx.letterSpacing = (o.letterSpacing || 0) + 'px';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.textAlign = align; ctx.textBaseline = 'middle';
     }
-    function eachLine(ctx, fn) { for (var j = 0; j < lines.length; j++) fn(lines[j], W / 2, pad + lineH * (j + 0.5)); }
+    function eachLine(ctx, fn) { for (var j = 0; j < lines.length; j++) fn(lines[j], alignX, pad + lineH * (j + 0.5)); }
 
     var maskCanvas = newCanvas(W, H);
     var m = maskCanvas.getContext('2d'); setup(m); m.fillStyle = '#fff';
