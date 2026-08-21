@@ -309,6 +309,15 @@ async function poll(page, fn, timeout, label) {
     ok(multi.h2 > multi.h1 + 20, 'text: line-spacing (leading) changes height (' + multi.h1 + ' -> ' + multi.h2 + ')');
     ok(multi.align === 'right', 'text: alignment control applies');
 
+    // ---- pathological input can't blow past canvas limits ----
+    const cap = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      var big = new Array(60).fill('WWWWWWWWWW').join('\n');   // 60 wide lines
+      S.setText({ text: big, size: 200, leading: 2.4, outlines: [], shadow: false });
+      return { w: S.state.source.width, h: S.state.source.height };
+    });
+    ok(cap.h <= 8000 && cap.w <= 8000, 'text: canvas clamped on huge input (' + cap.w + 'x' + cap.h + ')');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');

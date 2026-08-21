@@ -355,6 +355,18 @@
     return false;
   }
 
+  // Ensure the chosen text font is loaded (and the source rebuilt with it)
+  // before exporting, so an export never bakes in the fallback font.
+  function ensureExportFont(cb) {
+    if (state.mode === 'text' && document.fonts && document.fonts.load) {
+      try {
+        var css = TXT.fontCss(state.textOpts);
+        if (!document.fonts.check(css)) { document.fonts.load(css).then(function () { buildTextNow(); cb(); }, cb); return; }
+      } catch (e) {}
+    }
+    cb();
+  }
+
   function showResult(kind, url, filename) {
     var box = $('result'); box.innerHTML = '';
     var el;
@@ -369,49 +381,55 @@
 
   function doPNG() {
     if (busyGuard()) return;
-    state.busy = true; setStatus('Rendering PNG…');
-    EXP.exportPNG(state.source, state.instances, state.params,
-      { maxLong: 2000, matte: currentMatte(), render: renderExtras() }).then(function (blob) {
-      var name = 'sparklebitch.png';
-      EXP.download(blob, name);
-      showResult('image', URL.createObjectURL(blob), name);
-      state.busy = false; setStatus('Saved PNG ✨');
+    ensureExportFont(function () {
+      state.busy = true; setStatus('Rendering PNG…');
+      EXP.exportPNG(state.source, state.instances, state.params,
+        { maxLong: 2000, matte: currentMatte(), render: renderExtras() }).then(function (blob) {
+        var name = 'sparklebitch.png';
+        EXP.download(blob, name);
+        showResult('image', URL.createObjectURL(blob), name);
+        state.busy = false; setStatus('Saved PNG ✨');
+      });
     });
   }
 
   function doGIF() {
     if (busyGuard()) return;
-    state.busy = true; setStatus('Making GIF…'); setProgress(0);
-    var opts = {
-      maxLong: state.mode === 'text' ? 640 : 480, matte: currentMatte(),
-      render: renderExtras(), transparent: textTransparent(),
-      lengthSec: state.params.lengthSec, fps: state.params.fps
-    };
-    EXP.exportGIF(state.source, state.instances, state.params, opts, function (frac, label) {
-      setProgress(frac); setStatus('Making GIF… ' + label);
-    }).then(function (bytes) {
-      setProgress(null);
-      var name = 'sparklebitch.gif';
-      var blob = EXP.download(bytes, name, 'image/gif');
-      showResult('image', URL.createObjectURL(blob), name);
-      state.busy = false; setStatus('Saved GIF ✨ (' + (bytes.length / 1024 | 0) + ' KB)');
-    }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+    ensureExportFont(function () {
+      state.busy = true; setStatus('Making GIF…'); setProgress(0);
+      var opts = {
+        maxLong: state.mode === 'text' ? 640 : 480, matte: currentMatte(),
+        render: renderExtras(), transparent: textTransparent(),
+        lengthSec: state.params.lengthSec, fps: state.params.fps
+      };
+      EXP.exportGIF(state.source, state.instances, state.params, opts, function (frac, label) {
+        setProgress(frac); setStatus('Making GIF… ' + label);
+      }).then(function (bytes) {
+        setProgress(null);
+        var name = 'sparklebitch.gif';
+        var blob = EXP.download(bytes, name, 'image/gif');
+        showResult('image', URL.createObjectURL(blob), name);
+        state.busy = false; setStatus('Saved GIF ✨ (' + (bytes.length / 1024 | 0) + ' KB)');
+      }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+    });
   }
 
   function doVideo() {
     if (busyGuard()) return;
     if (!EXP.videoSupported()) { setStatus('⚠ Video export not supported in this browser — try GIF.'); return; }
-    state.busy = true; setStatus('Recording video…'); setProgress(0);
-    var opts = { maxLong: 720, matte: currentMatte() || MATTE, render: renderExtras(), lengthSec: state.params.lengthSec, fps: Math.max(12, state.params.fps) };
-    EXP.exportVideo(state.source, state.instances, state.params, opts, function (frac) { setProgress(frac); })
-      .then(function (out) {
-        setProgress(null);
-        var ext = out.mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
-        var name = 'sparklebitch.' + ext;
-        EXP.download(out.blob, name);
-        showResult('video', URL.createObjectURL(out.blob), name);
-        state.busy = false; setStatus('Saved ' + ext.toUpperCase() + ' ✨');
-      }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+    ensureExportFont(function () {
+      state.busy = true; setStatus('Recording video…'); setProgress(0);
+      var opts = { maxLong: 720, matte: currentMatte() || MATTE, render: renderExtras(), lengthSec: state.params.lengthSec, fps: Math.max(12, state.params.fps) };
+      EXP.exportVideo(state.source, state.instances, state.params, opts, function (frac) { setProgress(frac); })
+        .then(function (out) {
+          setProgress(null);
+          var ext = out.mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+          var name = 'sparklebitch.' + ext;
+          EXP.download(out.blob, name);
+          showResult('video', URL.createObjectURL(out.blob), name);
+          state.busy = false; setStatus('Saved ' + ext.toUpperCase() + ' ✨');
+        }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+    });
   }
 
   // ------------------------------------------------------------------ wire
