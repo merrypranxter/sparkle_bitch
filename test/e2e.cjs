@@ -182,7 +182,7 @@ async function poll(page, fn, timeout, label) {
     // ---- TEXT MODE: glitter text, transparent background, export ----
     await page.evaluate(async () => {
       window.SparkleBitch.setMode('text');
-      window.SparkleBitch.setText({ text: 'SPARKLE BITCH', size: 96, outline: 5 });
+      window.SparkleBitch.setText({ text: 'SPARKLE BITCH', size: 96, outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }] });
       window.SparkleBitch.setGlitter({ glitterStyle: 'rainbow', glitterDensity: 0.7 });
     });
     await poll(page, () => {
@@ -237,7 +237,7 @@ async function poll(page, fn, timeout, label) {
     // what's measured; otherwise the shadow floors the interior alpha.)
     const strength = await page.evaluate(() => {
       var SBM = window.SparkleBitch;
-      SBM.setMode('text'); SBM.setText({ text: 'AB', size: 120, shadow: false, outline: 0 });
+      SBM.setMode('text'); SBM.setText({ text: 'AB', size: 120, shadow: false, outlines: [] });
       SBM.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });
       function opaque(cv) { var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = 0; for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) n++; return n; }
       var hi = opaque(SBM.renderStillCanvas());
@@ -271,10 +271,99 @@ async function poll(page, fn, timeout, label) {
     ok(modeSafe.restored === 'image', 'fix: image preserved after Text round-trip (no reopen)');
     ok(modeSafe.tool === 'auto', 'fix: paint tool reset to Auto in Text mode (no crash on click)');
 
+    // ---- FONTS: grouped picker + a bundled pixel font renders in-browser ----
+    const fontUI = await page.evaluate(() => {
+      var sel = document.getElementById('textFont');
+      return { groups: sel.querySelectorAll('optgroup').length, opts: sel.querySelectorAll('option').length };
+    });
+    ok(fontUI.groups >= 6, 'fonts: picker is grouped (' + fontUI.groups + ' groups)');
+    ok(fontUI.opts >= 25, 'fonts: many fonts in the picker (' + fontUI.opts + ')');
+
+    const pixelFont = await page.evaluate(async () => {
+      var S = window.SparkleBitch;
+      S.setMode('text');
+      S.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1 });   // reset from the strength test
+      S.setText({ text: 'AB', size: 90, font: 'pressstart', outlines: [], shadow: false });
+      await document.fonts.load('64px "Press Start 2P"');   // resolves when the face is ready
+      S.setText({ font: 'pressstart' });                    // sync rebuild now uses the loaded font
+      var cv = S.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, opaque = 0;
+      for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) opaque++;
+      return { opaque: opaque, loaded: document.fonts.check('64px "Press Start 2P"') };
+    });
+    ok(pixelFont.loaded, 'fonts: bundled Press Start 2P loaded in-browser');
+    ok(pixelFont.opaque > 200, 'fonts: bundled font renders letterforms (' + pixelFont.opaque + ' px)');
+
+    // ---- multi-line text + alignment + leading ----
+    const multi = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setGlitter({ glitterIntensity: 1 });
+      S.setText({ text: 'line one\nline two\nthree', font: 'arialblack', size: 60, align: 'left', leading: 1.3, outlines: [], shadow: false });
+      var h1 = S.state.source.height;
+      S.setText({ leading: 2.2 });
+      var h2 = S.state.source.height;               // more leading -> taller canvas
+      S.setText({ align: 'right' });
+      return { h1: h1, h2: h2, lines: S.state.textOpts.text.split('\n').length, align: S.state.textOpts.align };
+    });
+    ok(multi.lines === 3, 'text: multi-line via newlines (' + multi.lines + ' lines)');
+    ok(multi.h2 > multi.h1 + 20, 'text: line-spacing (leading) changes height (' + multi.h1 + ' -> ' + multi.h2 + ')');
+    ok(multi.align === 'right', 'text: alignment control applies');
+
+    // ---- new multi-colour glitter styles ----
+    const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
+    ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
+    ok(styles.length >= 18, 'glitter: expanded style set (' + styles.length + ' styles)');
+
+    // ---- layered sparkle outlines ----
+    const outlines = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setGlitter({ glitterStyle: 'silver', glitterIntensity: 1 });
+      S.setText({ text: 'A', size: 120, outlines: [], shadow: false });
+      var noneW = S.state.source.width;
+      S.setText({ outlines: [
+        { width: 8, kind: 'glitter', glitter: 'neon' },   // inner: glitter outline
+        { width: 8, kind: 'color', color: '#00e5ff' }     // outer: solid cyan
+      ] });
+      var withW = S.state.source.width;
+      var layers = S.state.source.textRender.layers.length;
+      var cv = S.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, cyan = 0;
+      for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180 && d[i] < 120 && d[i + 1] > 170 && d[i + 2] > 200) cyan++;
+      return { noneW: noneW, withW: withW, layers: layers, cyan: cyan };
+    });
+    ok(outlines.withW > outlines.noneW, 'outlines: layers widen the canvas (' + outlines.noneW + ' -> ' + outlines.withW + ')');
+    ok(outlines.layers === 2, 'outlines: two outline layers built');
+    ok(outlines.cyan > 100, 'outlines: solid cyan outer outline is visible (' + outlines.cyan + ' px)');
+
     // ---- VIDEO SUPPORT ----
     const vid = await page.evaluate(() => ({ supported: SB.exporter.videoSupported() }));
     if (vid.supported) ok(true, 'video: MediaRecorder available in this browser');
     else warn('video: MediaRecorder not available (best-effort feature)');
+
+    // ---- custom fonts persist across reloads (IndexedDB) ----
+    const optionHas = function () {
+      return Array.prototype.some.call(document.querySelectorAll('#textFont option'),
+        function (o) { return o.textContent === 'My Persist Font'; });
+    };
+    const loaded = await page.evaluate(async (has) => {
+      var buf = await (await fetch('fonts/vt323.woff2')).arrayBuffer();
+      await window.SparkleBitch.loadFontFromBuffer('My Persist Font', buf, true);
+      await new Promise(function (r) { setTimeout(r, 60); });   // let the IDB put settle
+      return (new Function('return (' + has + ')()'))();
+    }, optionHas.toString());
+    ok(loaded, 'fonts: uploaded font appears in the picker');
+
+    await page.reload({ waitUntil: 'load' });
+    await poll(page, () => !!window.SparkleBitch && !!window.SB, 6000, 'reload init');
+    const remembered = await page.evaluate((has) => {
+      return new Promise(function (res) {
+        var check = new Function('return (' + has + ')()'), tries = 0;
+        var t = setInterval(function () {
+          if (check() || ++tries > 60) { clearInterval(t); res(check()); }
+        }, 50);
+      });
+    }, optionHas.toString());
+    ok(remembered, 'fonts: custom font is REMEMBERED after a page reload');
 
     ok(pageErrors.length === 0, 'no uncaught page errors' + (pageErrors.length ? ': ' + pageErrors[0] : ''));
   } catch (e) {

@@ -43,27 +43,56 @@
     return { alpha: alpha, size: params.maxSize * inst.baseSize * sizeMult, angle: angle };
   }
 
+  // glitter fields for outline styles are cached (normalised, so one per
+  // style/size/density/seed works at any output resolution).
+  var _fields = {};
+  function fieldFor(style, w, h, params) {
+    var d = params.glitterDensity != null ? params.glitterDensity : 0.6;
+    var s = params.seed != null ? params.seed : 1234;
+    var key = style + '|' + w + '|' + h + '|' + d + '|' + s;
+    if (!_fields[key]) {
+      if (Object.keys(_fields).length > 48) _fields = {};
+      _fields[key] = GL.buildField(w, h, style, d, s);
+    }
+    return _fields[key];
+  }
+  // fill a white mask with animated glitter, composited at `alpha`
+  function paintGlitterMasked(ctx, field, mask, phase01, still, alpha) {
+    var W = ctx.canvas.width, H = ctx.canvas.height;
+    var t = textLayerFor(W, H), tc = t.getContext('2d');
+    tc.setTransform(1, 0, 0, 1, 0, 0); tc.globalCompositeOperation = 'source-over'; tc.globalAlpha = 1; tc.filter = 'none'; tc.clearRect(0, 0, W, H);
+    GL.drawGlitter(tc, field, phase01, { w: W, h: H, base: true, still: still });
+    tc.globalCompositeOperation = 'destination-in'; tc.drawImage(mask, 0, 0, W, H);
+    ctx.save(); ctx.globalAlpha = U.clamp(alpha, 0, 1); ctx.drawImage(t, 0, 0); ctx.restore();
+  }
+  // fill a white mask with a solid colour
+  function paintColorMasked(ctx, mask, color) {
+    var W = ctx.canvas.width, H = ctx.canvas.height;
+    var t = textLayerFor(W, H), tc = t.getContext('2d');
+    tc.setTransform(1, 0, 0, 1, 0, 0); tc.globalCompositeOperation = 'source-over'; tc.globalAlpha = 1; tc.filter = 'none'; tc.clearRect(0, 0, W, H);
+    tc.drawImage(mask, 0, 0, W, H);
+    tc.globalCompositeOperation = 'source-in'; tc.fillStyle = color; tc.fillRect(0, 0, W, H);
+    ctx.drawImage(t, 0, 0);
+  }
+
   // ---- glitter text ----------------------------------------------------
-  function renderText(ctx, tr, field, params, phase01, opts) {
+  function renderText(ctx, tr, mainField, params, phase01, opts) {
     var W = ctx.canvas.width, H = ctx.canvas.height, still = !!opts.still;
+    var alpha = params.glitterIntensity != null ? params.glitterIntensity : 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
     ctx.clearRect(0, 0, W, H);
     if (opts.matte) { ctx.fillStyle = opts.matte; ctx.fillRect(0, 0, W, H); }
     if (tr.shadowCanvas) ctx.drawImage(tr.shadowCanvas, 0, 0, W, H);
-    if (tr.outlineCanvas) ctx.drawImage(tr.outlineCanvas, 0, 0, W, H);
-
-    var lay = textLayerFor(W, H), lc = lay.getContext('2d');
-    lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalCompositeOperation = 'source-over';
-    lc.globalAlpha = 1; lc.clearRect(0, 0, W, H);
-    GL.drawGlitter(lc, field, phase01, { w: W, h: H, base: true, still: still });
-    lc.globalCompositeOperation = 'destination-in';
-    lc.drawImage(tr.maskCanvas, 0, 0, W, H);
-    // honour the Glitter strength slider (params.glitterIntensity)
-    ctx.save();
-    ctx.globalAlpha = U.clamp(params.glitterIntensity != null ? params.glitterIntensity : 1, 0, 1);
-    ctx.drawImage(lay, 0, 0);
-    ctx.restore();
+    // outline layers, OUTERMOST first (inner bands overdraw on top)
+    var layers = tr.layers || [];
+    for (var k = layers.length - 1; k >= 0; k--) {
+      var L = layers[k];
+      if (L.kind === 'glitter') paintGlitterMasked(ctx, fieldFor(L.glitter, W, H, params), L.mask, phase01, still, alpha);
+      else paintColorMasked(ctx, L.mask, L.color || '#000000');
+    }
+    // the glitter letter fill, on top
+    paintGlitterMasked(ctx, mainField, tr.maskCanvas, phase01, still, alpha);
   }
 
   // ---- glitter overlay on an image -------------------------------------

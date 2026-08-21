@@ -7,9 +7,11 @@ modes:
 - **Image / GIF:** drop in a picture or GIF; it finds the bright/high-contrast
   spots, drops in animated sparkle sprites that match the local colour and size,
   and (optionally) lays animated glitter over the photo.
-- **Text:** type words and get **animated glitter text** — letterforms filled
-  with shimmering "dry glitter", on a transparent background so you can paste it
-  anywhere.
+- **Text:** type words (multi-line, with left/center/right align + line-spacing)
+  and get **animated glitter text** — letterforms filled with shimmering "dry
+  glitter" in 19 styles (rainbow, confetti, all-neon, unicorn, galaxy, fire…),
+  on a transparent background so you can paste it anywhere. Add **stackable
+  outlines**, each its own solid colour *or* its own glitter.
 
 Everything exports as a **PNG**, **animated GIF**, or **video**.
 
@@ -86,6 +88,23 @@ load an MP4/WebM and export a **WebM** (or MP4 where your browser's recorder
 supports it). Sparkle positions are detected on the first frame and don't track
 motion — good enough for a shimmer pass. If video doesn't work in your browser,
 GIF always will.
+
+---
+
+## Fonts
+
+Glitter **Text** mode ships a big grouped font picker: web-safe **System** fonts
+plus **23 bundled** open-licensed Y2K faces (all OFL / Apache 2.0, so they work
+offline with no downloads) across Pixel, Techno, Bubble, Retro, Gothic and
+Handwriting — Press Start 2P, VT323, Orbitron, Michroma, Bungee, Baloo, Monoton,
+UnifrakturCook (blackletter), Permanent Marker, and more. See
+[`fonts/README.md`](fonts/README.md) for the full list and how to add more.
+
+**Want a font that isn't listed** (Eurostile, Neuropol, a DaFont find…)? In Text
+mode click **＋ Load font file** and pick any `.ttf` / `.otf` / `.woff` you've
+downloaded — it loads instantly and shows up under **Your fonts**. It's
+**remembered across visits** (saved in your browser's IndexedDB; nothing is
+uploaded anywhere).
 
 ---
 

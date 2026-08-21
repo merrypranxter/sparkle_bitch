@@ -21,8 +21,11 @@
     rng: null,
     glitterField: null,
     textOpts: {
-      text: 'sparkle bitch', font: 'fat', size: 96, bold: true, italic: false,
-      outline: 4, outlineColor: '#3a0a2e', shadow: true, bg: null // null = transparent
+      text: 'sparkle bitch', font: 'arialblack', size: 96, bold: true, italic: false,
+      align: 'center', leading: 1.3,
+      // layered outlines, innermost first; each is a solid colour OR a glitter style
+      outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }],
+      shadow: true, bg: null // null = transparent
     },
     maskCanvas: null,   // working-res canvas; painted = selected
     maskActive: false,
@@ -92,13 +95,124 @@
     var d = refDims();
     state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed);
   }
-  function rebuildText() {
+  function buildTextNow() {
     state.textSource = MED.makeTextSource(state.textOpts);
     state.source = state.textSource;
     view.width = state.source.width; view.height = state.source.height;
     document.body.classList.add('has-image');
     buildGlitterField();
     setStatus('“' + state.textOpts.text + '” · ' + state.params.glitterStyle + ' glitter');
+  }
+  function rebuildText() {
+    // Build now (always fresh / correct size). If the chosen font's glyphs
+    // aren't loaded yet, load them and rebuild so the mask swaps from the
+    // fallback to the real font once it's ready.
+    buildTextNow();
+    if (document.fonts && document.fonts.load) {
+      var css = TXT.fontCss(state.textOpts);
+      try {
+        if (!document.fonts.check(css)) {
+          document.fonts.load(css).then(function () { if (state.mode === 'text') buildTextNow(); }, function () {});
+        }
+      } catch (e) {}
+    }
+  }
+
+  function populateFontSelect() {
+    var sel = $('textFont'); sel.innerHTML = '';
+    TXT.fontGroups().forEach(function (grp) {
+      var og = document.createElement('optgroup'); og.label = grp.label;
+      grp.fonts.forEach(function (f) {
+        var o = document.createElement('option'); o.value = f.id; o.textContent = f.label; og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    sel.value = state.textOpts.font;
+  }
+
+  // Load a user-supplied font file (FontFace API) and add it to the picker.
+  // Load a font from raw bytes, add it to the picker, select it, and (optionally)
+  // remember it in IndexedDB so it survives a reload.
+  function loadFontFromBuffer(family, buffer, persist) {
+    family = TXT.cleanFamily(family);   // one clean name for FontFace + registry
+    return new FontFace(family, buffer).load().then(function (f) {
+      document.fonts.add(f);
+      var id = TXT.registerCustom(family);
+      state.textOpts.font = id;
+      populateFontSelect();
+      if (persist && SB.fontStore) { try { SB.fontStore.put(family, buffer.slice(0)).catch(function () {}); } catch (e) {} }
+      if (state.mode !== 'text') setMode('text'); else rebuildText();
+      setStatus('Loaded font “' + family + '” ✨');
+      return id;
+    });
+  }
+  function onFontFile(file) {
+    if (!file) return;
+    if (typeof FontFace === 'undefined') { setStatus('⚠ This browser can’t load custom fonts'); return; }
+    var family = (file.name || 'My Font').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ');
+    setStatus('Loading font “' + TXT.cleanFamily(family) + '”…');
+    var reader = new FileReader();
+    reader.onload = function () {
+      loadFontFromBuffer(family, reader.result, true).catch(function () { setStatus('⚠ Could not read that font file'); });
+    };
+    reader.onerror = function () { setStatus('⚠ Could not read that font file'); };
+    reader.readAsArrayBuffer(file);
+  }
+  // Re-load fonts saved on a previous visit (persisted in IndexedDB), silently.
+  function loadStoredFonts() {
+    if (!SB.fontStore || typeof FontFace === 'undefined') return;
+    SB.fontStore.all().then(function (list) {
+      list.forEach(function (rec) {
+        try {
+          new FontFace(rec.family, rec.buffer).load().then(function (f) {
+            document.fonts.add(f); TXT.registerCustom(rec.family); populateFontSelect();
+          }, function () {});
+        } catch (e) {}
+      });
+    }).catch(function () {});
+  }
+
+  // ---- layered outlines UI ----
+  function fillOutlineType(sel, current) {
+    sel.innerHTML = '';
+    var solid = document.createElement('option'); solid.value = 'color'; solid.textContent = 'Solid'; sel.appendChild(solid);
+    var og = document.createElement('optgroup'); og.label = 'Glitter';
+    GL.styleList().forEach(function (s) { var o = document.createElement('option'); o.value = s.id; o.textContent = s.label; og.appendChild(o); });
+    sel.appendChild(og);
+    sel.value = current;
+  }
+  function renderOutlineList() {
+    var box = $('outlineList'); if (!box) return;
+    box.innerHTML = '';
+    state.textOpts.outlines.forEach(function (layer) {
+      var row = document.createElement('div'); row.className = 'outline-row';
+      var ty = document.createElement('select');
+      fillOutlineType(ty, layer.kind === 'glitter' ? (layer.glitter || 'silver') : 'color');
+      var col = document.createElement('input'); col.type = 'color'; col.value = layer.color || '#3a0a2e';
+      col.style.visibility = layer.kind === 'glitter' ? 'hidden' : 'visible';
+      var w = document.createElement('input'); w.type = 'range'; w.min = '2'; w.max = '26'; w.step = '1'; w.value = layer.width; w.title = 'width';
+      var rm = document.createElement('button'); rm.className = 'btn tiny'; rm.textContent = '✕'; rm.title = 'remove';
+      ty.addEventListener('change', function () {
+        if (ty.value === 'color') { layer.kind = 'color'; col.style.visibility = 'visible'; }
+        else { layer.kind = 'glitter'; layer.glitter = ty.value; col.style.visibility = 'hidden'; }
+        if (state.mode === 'text') rebuildText();
+      });
+      col.addEventListener('input', function () { layer.color = col.value; if (state.mode === 'text') rebuildText(); });
+      w.addEventListener('input', function () { layer.width = parseFloat(w.value); if (state.mode === 'text') rebuildText(); });
+      rm.addEventListener('click', function () {
+        var i = state.textOpts.outlines.indexOf(layer);
+        if (i >= 0) state.textOpts.outlines.splice(i, 1);
+        renderOutlineList(); if (state.mode === 'text') rebuildText();
+      });
+      row.appendChild(ty); row.appendChild(col); row.appendChild(w); row.appendChild(rm);
+      box.appendChild(row);
+    });
+  }
+  function addOutline() {
+    var palette = ['#4fe3ff', '#ff5fd2', '#b6ff5a', '#ffd45c', '#ffffff'];
+    var c = palette[state.textOpts.outlines.length % palette.length];
+    state.textOpts.outlines.push({ width: 6, kind: 'color', color: c, glitter: 'neon' });
+    renderOutlineList(); if (state.mode === 'text') rebuildText();
   }
   function renderExtras() {
     if (state.mode === 'text' && state.source && state.source.textRender) {
@@ -362,8 +476,9 @@
     setVal('glitterIntensity', p.glitterIntensity); $('glitterFill').checked = !!p.glitterOnImage;
     // text
     setVal('textInput', t.text); setVal('textFont', t.font); setVal('textSize', t.size);
+    setVal('textAlign', t.align); setVal('textLeading', t.leading);
     $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
-    setVal('textOutline', t.outline); setVal('textOutlineColor', t.outlineColor);
+    renderOutlineList();
     $('textShadow').checked = !!t.shadow;
     $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
     $('textBgColor').disabled = !t.bg;
@@ -463,11 +578,19 @@
     });
 
     // text controls
-    populateSelect('textFont', TXT.fontList());
+    populateFontSelect();
+    $('loadFontBtn').addEventListener('click', function () { $('fontFileInput').click(); });
+    $('fontFileInput').addEventListener('change', function () {
+      if (this.files && this.files[0]) onFontFile(this.files[0]);
+      this.value = '';
+    });
+    loadStoredFonts();   // bring back fonts saved on a previous visit
     bindText('textInput', 'text'); bindText('textFont', 'font', 'change');
     bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
-    bindText('textItalic', 'italic', 'change'); bindText('textOutline', 'outline');
-    bindText('textOutlineColor', 'outlineColor', 'change'); bindText('textShadow', 'shadow', 'change');
+    bindText('textItalic', 'italic', 'change'); bindText('textShadow', 'shadow', 'change');
+    bindText('textAlign', 'align', 'change'); bindText('textLeading', 'leading');
+    renderOutlineList();
+    $('addOutlineBtn').addEventListener('click', addOutline);
     $('textTransparent').addEventListener('change', function () {
       state.textOpts.bg = $('textTransparent').checked ? null : $('textBgColor').value;
       $('textBgColor').disabled = $('textTransparent').checked;
@@ -520,6 +643,7 @@
     openFile: openFile, state: state,
     doPNG: doPNG, doGIF: doGIF,
     setMode: setMode,
+    loadFontFromBuffer: loadFontFromBuffer,
     setText: function (o) { for (var k in o) state.textOpts[k] = o[k]; syncControls(); if (state.mode === 'text') rebuildText(); },
     setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); },
     renderStillCanvas: function () { return EXP.renderStill(state.source, state.instances, state.params, 640, currentMatte(), renderExtras()); },
