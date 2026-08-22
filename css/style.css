@@ -163,6 +163,21 @@ input[type="range"] { accent-color: var(--pink); height: 22px; }
 body.mode-text .mode-text-only { display: flex; }
 body.mode-text .mode-image-only { display: none !important; }
 
+/* ---- liminal mode ---- */
+.mode-liminal-only { display: none; }
+body.mode-liminal .mode-liminal-only { display: flex; }
+body.mode-liminal .mode-image-only { display: none !important; }
+body.mode-liminal .mode-text-only { display: none !important; }
+body.mode-liminal #openBtn { display: block !important; }
+.liminal-controls { flex-direction: column; gap: 12px; }
+.lim-details { padding: 0; }
+.lim-details > summary {
+  cursor: pointer; padding: 10px; font-weight: 800; font-size: 13px;
+  color: var(--ink);
+}
+.lim-details[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.lim-details > .ctl, .lim-details > .tool-row { margin: 0 10px 9px; }
+
 .group-title { font-weight: 800; color: var(--ink); font-size: 13px; }
 .ctl.check { flex-direction: row; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
 .ctl.check input { width: auto; }

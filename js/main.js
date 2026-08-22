@@ -10,11 +10,12 @@
   var MATTE = '#0a0710';
 
   var state = {
-    mode: 'image',      // 'image' | 'text'
+    mode: 'image',      // 'image' | 'text' | 'liminal'
     source: null,       // active source (points at imageSource or textSource)
     imageSource: null,  // last opened image/gif/video (kept across tab switches)
     textSource: null,   // last built glitter-text source
     params: PRE.defaults(),
+    liminal: null,      // liminal engine params (built below, persisted)
     centers: [],
     penCenters: [],
     instances: [],
@@ -55,6 +56,21 @@
   var IMG_PAL_KEY = 'sb-custom-image', TXT_PAL_KEY = 'sb-custom-text';
   var imageCustomHex = loadJSON(IMG_PAL_KEY, ['#ff5fd2', '#4fe3ff', '#b6ff5a', '#ffd45c', '#ffffff']);
   var textCustomDef = loadJSON(TXT_PAL_KEY, { base: '#3a0a2e', flakes: ['#ff5fd2', '#4fe3ff', '#b6ff5a', '#ffd45c', '#ffffff'] });
+
+  // liminal engine params, remembered across visits; saved objects are merged
+  // over defaults so newly added effect keys always exist
+  var LIM_KEY = 'sb-liminal';
+  function mergeLiminal(saved) {
+    var p = SB.liminal.defaults();
+    if (saved) for (var k in saved) {
+      if (!saved.hasOwnProperty(k)) continue;
+      if (saved[k] && typeof saved[k] === 'object' && p[k] && typeof p[k] === 'object') {
+        for (var j in saved[k]) if (saved[k].hasOwnProperty(j)) p[k][j] = saved[k][j];
+      } else p[k] = saved[k];
+    }
+    return p;
+  }
+  state.liminal = mergeLiminal(loadJSON(LIM_KEY, null));
 
   function imageCustomPalette() { return imageCustomHex.map(U.hexToRgb); }
   function applyTextCustom() {
@@ -288,6 +304,7 @@
     renderOutlineList(); if (state.mode === 'text') rebuildText();
   }
   function renderExtras() {
+    if (state.mode === 'liminal') return { liminal: state.liminal };
     if (state.mode === 'text' && state.source && state.source.textRender) {
       return { text: state.source.textRender, glitterField: state.glitterField };
     }
@@ -358,7 +375,9 @@
       if (state.imageSource && state.imageSource.revoke) state.imageSource.revoke();
       state.imageSource = src;
       state.source = src;
-      state.mode = 'image'; applyModeUI();
+      // dropping a file while in Liminal keeps you in Liminal; Text falls back to Image
+      if (state.mode !== 'liminal') state.mode = 'image';
+      applyModeUI();
       // reset selection + undo history
       state.penCenters = []; state.maskActive = false; ensureMaskCanvas();
       state.maskCanvas.getContext('2d').clearRect(0, 0, state.maskCanvas.width, state.maskCanvas.height);
@@ -371,7 +390,8 @@
       redetect();
       buildGlitterField();
       state.busy = false;
-      setStatus(src.kind.toUpperCase() + ' ' + src.width + '×' + src.height + ' · ' + state.instances.length + ' sparkles');
+      setStatus(src.kind.toUpperCase() + ' ' + src.width + '×' + src.height +
+        (state.mode === 'liminal' ? ' · 🌑 liminal' : ' · ' + state.instances.length + ' sparkles'));
     }).catch(function (err) {
       state.busy = false; setStatus('⚠ ' + err.message);
     });
@@ -642,6 +662,67 @@
     setStatus('🎲 CHAOS! ' + state.instances.length + ' sparkles');
   }
 
+  // ------------------------------------------------------------ liminal mode
+  function limGet(path) {
+    return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, state.liminal);
+  }
+  function limSet(path, v) {
+    var ks = path.split('.'), o = state.liminal;
+    for (var i = 0; i < ks.length - 1; i++) { if (!o[ks[i]]) o[ks[i]] = {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = v;
+    state.liminal.preset = '';            // any manual tweak = custom stack
+    saveJSON(LIM_KEY, state.liminal);
+    markLiminalChips();
+  }
+  function markLiminalChips() {
+    var box = $('limPresets'); if (!box) return;
+    var cur = state.liminal.preset || '';
+    box.querySelectorAll('.chip').forEach(function (chip) {
+      chip.classList.toggle('active', chip.getAttribute('data-lim-preset') === cur);
+    });
+  }
+  function applyLiminalPreset(id) {
+    state.liminal = SB.liminal.preset(id);
+    saveJSON(LIM_KEY, state.liminal);
+    syncLiminalControls();
+    setStatus(id ? '🌑 ' + SB.liminal.PRESETS[id].label : '🌑 effects off — plain image');
+  }
+  function syncLiminalControls() {
+    document.querySelectorAll('[data-lim]').forEach(function (el) {
+      var v = limGet(el.getAttribute('data-lim'));
+      if (el.type === 'checkbox') el.checked = !!v;
+      else el.value = v;
+    });
+    markLiminalChips();
+    updateAllLabels();
+  }
+  function buildLiminalUI() {
+    var box = $('limPresets'); if (!box) return;
+    box.innerHTML = '';
+    SB.liminal.presetList().forEach(function (pr) {
+      var chip = document.createElement('button');
+      chip.className = 'chip'; chip.textContent = pr.label;
+      chip.setAttribute('data-lim-preset', pr.id);
+      chip.addEventListener('click', function () { applyLiminalPreset(pr.id); });
+      box.appendChild(chip);
+    });
+    var off = document.createElement('button');
+    off.className = 'chip'; off.textContent = '✖️ Off';
+    off.setAttribute('data-lim-preset', '');
+    off.addEventListener('click', function () { applyLiminalPreset(''); });
+    box.appendChild(off);
+    // generic binding: every [data-lim] input writes straight into state.liminal
+    document.querySelectorAll('[data-lim]').forEach(function (el) {
+      var path = el.getAttribute('data-lim');
+      var evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
+      el.addEventListener(evt, function () {
+        var v = el.type === 'checkbox' ? el.checked : (el.type === 'range' ? parseFloat(el.value) : el.value);
+        limSet(path, v); updateAllLabels();
+      });
+    });
+    syncLiminalControls();
+  }
+
   // ------------------------------------------------------------------ wire
   function populateSelect(id, items) {
     var el = $(id); if (!el) return;
@@ -659,6 +740,20 @@
     });
   }
 
+  function restoreImageSource() {
+    if (!state.imageSource) {
+      state.source = null; document.body.classList.remove('has-image');
+      return;
+    }
+    // restore the previously loaded image/gif/video instead of losing it
+    state.source = state.imageSource;
+    var sz = EXP.fitSize(state.source.width, state.source.height, 960);
+    view.width = sz.w; view.height = sz.h;
+    document.body.classList.add('has-image');
+    buildGlitterField();
+    buildDust();
+  }
+
   function setMode(mode) {
     state.mode = mode; applyModeUI();
     if (mode === 'text') {
@@ -666,28 +761,33 @@
       state.tool = 'auto'; if ($('toolAuto')) $('toolAuto').checked = true;
       view.classList.remove('painting');
       rebuildText();
-    } else if (state.imageSource) {
-      // restore the previously loaded image/gif/video instead of losing it
-      state.source = state.imageSource;
-      var sz = EXP.fitSize(state.source.width, state.source.height, 960);
-      view.width = sz.w; view.height = sz.h;
-      document.body.classList.add('has-image');
-      buildGlitterField();
-      buildDust();
-      setStatus(state.source.kind.toUpperCase() + ' ' + state.source.width + '×' + state.source.height);
     } else {
-      state.source = null; document.body.classList.remove('has-image'); setStatus('Open an image or GIF ✨');
+      if (mode === 'liminal') {
+        // liminal haunts the loaded image — but it has no paint tools
+        state.tool = 'auto'; if ($('toolAuto')) $('toolAuto').checked = true;
+        view.classList.remove('painting');
+      }
+      restoreImageSource();
+      if (state.source) {
+        setStatus(state.source.kind.toUpperCase() + ' ' + state.source.width + '×' + state.source.height +
+          (mode === 'liminal' ? ' · 🌑 pick a vibe' : ''));
+      } else {
+        setStatus(mode === 'liminal' ? 'Open an image or GIF first 🌑' : 'Open an image or GIF ✨');
+      }
     }
   }
   function applyModeUI() {
     document.body.classList.toggle('mode-text', state.mode === 'text');
     document.body.classList.toggle('mode-image', state.mode === 'image');
+    document.body.classList.toggle('mode-liminal', state.mode === 'liminal');
     $('tabImage').classList.toggle('active', state.mode === 'image');
     $('tabText').classList.toggle('active', state.mode === 'text');
+    $('tabLiminal').classList.toggle('active', state.mode === 'liminal');
     updateGlitterVisibility();
   }
   function updateGlitterVisibility() {
-    $('glitterGroup').classList.toggle('hidden', !(state.mode === 'text' || state.params.glitterOnImage));
+    $('glitterGroup').classList.toggle('hidden',
+      !(state.mode === 'text' || (state.mode === 'image' && state.params.glitterOnImage)));
     updateColorUI();
   }
   // show/hide the conditional controls (palette editor, single colour, dust…)
@@ -810,11 +910,14 @@
     // mode tabs
     $('tabImage').addEventListener('click', function () { setMode('image'); });
     $('tabText').addEventListener('click', function () { setMode('text'); });
+    $('tabLiminal').addEventListener('click', function () { setMode('liminal'); });
+    buildLiminalUI();
 
     // sparkle it (re-roll)
     $('sparkleBtn').addEventListener('click', function () {
       state.params.seed = (Math.random() * 1e9) | 0;
       if (state.mode === 'text') { buildGlitterField(); setStatus('✨ Reglittered!'); }
+      else if (state.mode === 'liminal') { setStatus('🌑 Re-haunted! (fresh grain)'); }
       else if (!state.source) { $('fileInput').click(); }
       else { redetect(); buildGlitterField(); setStatus('✨ Sparkled! ' + state.instances.length + ' sparkles'); }
     });
@@ -960,6 +1063,8 @@
     openFile: openFile, state: state,
     doPNG: doPNG, doGIF: doGIF,
     setMode: setMode,
+    setLiminal: limSet,
+    applyLiminalPreset: applyLiminalPreset,
     loadFontFromBuffer: loadFontFromBuffer,
     setText: function (o) { for (var k in o) state.textOpts[k] = o[k]; syncControls(); if (state.mode === 'text') rebuildText(); },
     setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); buildDust(); },

@@ -33,6 +33,7 @@
       <div class="tabs">
         <button id="tabImage" class="tab active">🖼️ Image / GIF</button>
         <button id="tabText" class="tab">🔤 Text</button>
+        <button id="tabLiminal" class="tab">🌑 Liminal</button>
       </div>
 
       <div class="row primary-row">
@@ -204,6 +205,86 @@
         </div>
       </div>
 
+      <!-- LIMINAL MODE: degrade reality instead of decorating it -->
+      <div class="mode-liminal-only liminal-controls">
+        <div class="group">
+          <div class="group-title">🌑 Vibe <span class="hint">— one click, whole stack</span></div>
+          <div id="limPresets" class="row preset-row"></div>
+        </div>
+
+        <details class="group lim-details" open>
+          <summary>Screen texture</summary>
+          <label class="ctl check"><input type="checkbox" id="limScanOn" data-lim="scanlines.enabled" /> CRT scanlines</label>
+          <label class="ctl"><span>Scanline density <b data-label-for="limScanDensity"></b></span>
+            <input id="limScanDensity" type="range" min="0" max="1" step="0.05" data-lim="scanlines.density" /></label>
+          <label class="ctl check"><input type="checkbox" id="limScanRgb" data-lim="scanlines.rgbOffset" /> RGB phosphor offset</label>
+          <label class="ctl check"><input type="checkbox" id="limMoireOn" data-lim="moire.enabled" /> DVD moiré grid</label>
+          <label class="ctl"><span>Moiré opacity <b data-label-for="limMoireOpacity"></b></span>
+            <input id="limMoireOpacity" type="range" min="0" max="0.3" step="0.01" data-lim="moire.opacity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limGrainOn" data-lim="grain.enabled" /> Film grain</label>
+          <label class="ctl"><span>Grain amount <b data-label-for="limGrainAmount"></b></span>
+            <input id="limGrainAmount" type="range" min="0" max="0.5" step="0.05" data-lim="grain.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limGrainAnim" data-lim="grain.animated" /> Animated grain</label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>Optical flaws</summary>
+          <label class="ctl check"><input type="checkbox" id="limCaOn" data-lim="chromaticAberration.enabled" /> Chromatic aberration</label>
+          <label class="ctl"><span>Aberration amount <b data-label-for="limCaAmount"></b></span>
+            <input id="limCaAmount" type="range" min="0" max="12" step="1" data-lim="chromaticAberration.amount" /></label>
+          <label class="ctl"><span>Aberration mode</span>
+            <select id="limCaMode" data-lim="chromaticAberration.mode">
+              <option value="edge">Edges only (cheap lens)</option>
+              <option value="fullFrame">Full-frame smear</option>
+            </select></label>
+          <label class="ctl check"><input type="checkbox" id="limDiffOn" data-lim="diffusion.enabled" /> Vaseline bloom</label>
+          <label class="ctl"><span>Bloom amount <b data-label-for="limDiffAmount"></b></span>
+            <input id="limDiffAmount" type="range" min="0" max="1" step="0.05" data-lim="diffusion.amount" /></label>
+          <label class="ctl"><span>Bloom radius <b data-label-for="limDiffRadius"></b></span>
+            <input id="limDiffRadius" type="range" min="2" max="30" step="1" data-lim="diffusion.radius" /></label>
+          <label class="ctl check"><input type="checkbox" id="limVigOn" data-lim="vignette.enabled" /> Vignette</label>
+          <label class="ctl"><span>Vignette strength <b data-label-for="limVigStrength"></b></span>
+            <input id="limVigStrength" type="range" min="0" max="1" step="0.05" data-lim="vignette.strength" /></label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>Light treatments</summary>
+          <label class="ctl check"><input type="checkbox" id="limStarOn" data-lim="starbursts.enabled" /> Starbursts on lights</label>
+          <label class="ctl"><span>Starburst threshold <b data-label-for="limStarThreshold"></b></span>
+            <input id="limStarThreshold" type="range" min="100" max="255" step="5" data-lim="starbursts.threshold" /></label>
+          <label class="ctl"><span>Starburst intensity <b data-label-for="limStarIntensity"></b></span>
+            <input id="limStarIntensity" type="range" min="0" max="2" step="0.1" data-lim="starbursts.intensity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limAnaOn" data-lim="anamorphic.enabled" /> Anamorphic streaks</label>
+          <label class="ctl"><span>Streak length <b data-label-for="limAnaLength"></b></span>
+            <input id="limAnaLength" type="range" min="0.05" max="0.5" step="0.05" data-lim="anamorphic.length" /></label>
+          <label class="ctl"><span>Streak intensity <b data-label-for="limAnaIntensity"></b></span>
+            <input id="limAnaIntensity" type="range" min="0" max="2" step="0.1" data-lim="anamorphic.intensity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limPrismOn" data-lim="prismatic.enabled" /> Prismatic haze</label>
+          <label class="ctl"><span>Haze strength <b data-label-for="limPrismStrength"></b></span>
+            <input id="limPrismStrength" type="range" min="0" max="1" step="0.05" data-lim="prismatic.strength" /></label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>Color grade</summary>
+          <label class="ctl check"><input type="checkbox" id="limGradeOn" data-lim="colorGrade.enabled" /> Enable grade</label>
+          <label class="ctl"><span>Lift blacks (fade) <b data-label-for="limLiftBlack"></b></span>
+            <input id="limLiftBlack" type="range" min="0" max="0.3" step="0.01" data-lim="colorGrade.liftBlack" /></label>
+          <label class="ctl"><span>Sodium vapor <b data-label-for="limSodium"></b></span>
+            <input id="limSodium" type="range" min="0" max="1" step="0.05" data-lim="colorGrade.sodium" /></label>
+          <label class="ctl check"><input type="checkbox" id="limPrismShift" data-lim="colorGrade.prismShift" /> Prism shift</label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>Frame &amp; motion</summary>
+          <label class="ctl check"><input type="checkbox" id="limRoundOn" data-lim="roundedFrame.enabled" /> Rounded frame</label>
+          <label class="ctl"><span>Corner radius <b data-label-for="limRoundRadius"></b></span>
+            <input id="limRoundRadius" type="range" min="0" max="100" step="5" data-lim="roundedFrame.radius" /></label>
+          <label class="ctl check"><input type="checkbox" id="limBreathOn" data-lim="breathingZoom.enabled" /> Breathing zoom</label>
+          <label class="ctl"><span>Breath amount <b data-label-for="limBreathAmount"></b></span>
+            <input id="limBreathAmount" type="range" min="0" max="2" step="0.1" data-lim="breathingZoom.amount" /></label>
+        </details>
+      </div>
+
       <!-- GLITTER (shared: always in Text mode, optional in Image mode) -->
       <div id="glitterGroup" class="group hidden">
         <div class="group-title">✨ Glitter</div>
@@ -278,6 +359,7 @@
   <script src="js/analyze.js"></script>
   <script src="js/sparkles.js"></script>
   <script src="js/glitter.js"></script>
+  <script src="js/liminal.js"></script>
   <script src="js/render.js"></script>
   <script src="js/text.js"></script>
   <script src="js/gif-encode.js"></script>

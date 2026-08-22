@@ -668,6 +668,77 @@ async function poll(page, fn, timeout, label) {
     ok(textPal.opaque > 100 && textPal.magenta > 10, 'text palette: custom flakes render in the letters (' + textPal.magenta + ' magenta px)');
     ok(textPal.storedBase === '#102030', 'text palette: saved to localStorage');
 
+    // ---- LIMINAL MODE: the third engine haunts the same image ----
+    await page.evaluate(async () => {
+      var W = 240, H = 160, c = document.createElement('canvas'); c.width = W; c.height = H;
+      var x = c.getContext('2d');
+      x.fillStyle = '#252530'; x.fillRect(0, 0, W, H);
+      [[40, 50], [120, 30], [200, 60], [80, 120], [170, 120]].forEach(function (p) {
+        x.fillStyle = '#fff8e0'; x.beginPath(); x.arc(p[0], p[1], 5, 0, 7); x.fill();
+      });
+      var blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      window.SparkleBitch.openFile(new File([blob], 'night.png', { type: 'image/png' }));
+    });
+    await poll(page, () => window.SparkleBitch.state.source && window.SparkleBitch.state.source.width === 240, 5000, 'liminal scene loaded');
+    const lim = await page.evaluate(async () => {
+      var SBM = window.SparkleBitch;
+      var out = {};
+      SBM.setMode('liminal');
+      out.mode = SBM.state.mode;
+      out.bodyClass = document.body.classList.contains('mode-liminal');
+      out.hasImage = !!(SBM.state.source && SBM.state.source.kind === 'image');
+      out.sparklePanelHidden = !document.querySelector('.image-controls').offsetParent;
+      function hot(cv) {
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = 0;
+        for (var i = 0; i < d.length; i += 4) if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 200) n++;
+        return n;
+      }
+      function rowGap(cv) {
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        var even = 0, odd = 0, n = 0;
+        for (var y = 0; y < cv.height - 1; y += 2) {
+          for (var x = 0; x < cv.width; x += 4) {
+            var i = (y * cv.width + x) * 4, j = ((y + 1) * cv.width + x) * 4;
+            even += d[i] + d[i + 1] + d[i + 2]; odd += d[j] + d[j + 1] + d[j + 2]; n++;
+          }
+        }
+        return Math.abs(even - odd) / n;
+      }
+      SBM.applyLiminalPreset('');                          // all effects off
+      out.hotOff = hot(SBM.renderStillCanvas());
+      SBM.setLiminal('starbursts.enabled', true);          // starbursts alone
+      out.hotOn = hot(SBM.renderStillCanvas());
+      out.chips = document.querySelectorAll('#limPresets .chip').length;
+      document.querySelector('[data-lim-preset="crt"]').click();
+      var p = SBM.state.liminal;
+      out.presetApplied = p.preset === 'crt' && p.scanlines.enabled && p.moire.enabled && p.grain.enabled;
+      var cv = SBM.renderStillCanvas();
+      out.rowGap = rowGap(cv);
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      function lumAt(px, py) { var i = (py * cv.width + px) * 4; return 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; }
+      out.corner = lumAt(2, 2);
+      out.center = lumAt(cv.width >> 1, cv.height >> 1);
+      // manual tweak overrides the preset and marks the stack custom
+      SBM.setLiminal('scanlines.enabled', false);
+      out.manualOff = SBM.state.liminal.scanlines.enabled === false && SBM.state.liminal.preset === '';
+      out.rowGapOff = rowGap(SBM.renderStillCanvas());
+      SBM.setLiminal('scanlines.enabled', true);           // back on, still custom
+      // GIF export runs the liminal stack frame by frame
+      var u8 = new Uint8Array(await SBM.exportGifBytes());
+      out.gifFrames = SB.decodeGIF(u8).frames.length;
+      return out;
+    });
+    ok(lim.mode === 'liminal' && lim.bodyClass, 'liminal: third mode activates');
+    ok(lim.hasImage, 'liminal: keeps the loaded image');
+    ok(lim.sparklePanelHidden, 'liminal: sparkle controls swap out');
+    ok(lim.chips >= 6, 'liminal: vibe chips rendered (' + lim.chips + ')');
+    ok(lim.presetApplied, 'liminal: CRT House chip applies the whole stack');
+    ok(lim.hotOn > lim.hotOff + 50, 'liminal: starbursts add hot pixels (' + lim.hotOff + ' -> ' + lim.hotOn + ')');
+    ok(lim.rowGap > 1 && lim.rowGap > lim.rowGapOff, 'liminal: scanlines alternate rows (gap ' + lim.rowGap.toFixed(1) + ' -> off ' + lim.rowGapOff.toFixed(1) + ')');
+    ok(lim.corner < 10 && lim.center > lim.corner, 'liminal: frame + vignette darken corners (' + lim.corner.toFixed(0) + ' vs ' + lim.center.toFixed(0) + ')');
+    ok(lim.manualOff, 'liminal: manual tweak overrides preset (custom stack)');
+    ok(lim.gifFrames > 1, 'liminal: GIF export works (' + lim.gifFrames + ' frames)');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
@@ -728,16 +799,20 @@ async function poll(page, fn, timeout, label) {
     const palRemembered = await page.evaluate(() => {
       var st = SB.glitter.STYLES.custom;
       var sw = document.querySelectorAll('#imgCustomPalette input[type=color]');
+      var limP = window.SparkleBitch.state.liminal;
       return {
         textBase: st ? st.base.join(',') : 'none',
         imgFirst: sw.length ? sw[0].value : 'none',
         mineOption: !!document.querySelector('#paletteId option[value="mine"]'),
-        customOption: !!document.querySelector('#glitterStyle option[value="custom"]')
+        customOption: !!document.querySelector('#glitterStyle option[value="custom"]'),
+        limScan: limP && limP.scanlines.enabled === true,
+        limCustom: limP && limP.preset === ''
       };
     });
     ok(palRemembered.textBase === '16,32,48', 'persistence: custom text palette re-registered after reload');
     ok(palRemembered.imgFirst === '#ff0000', 'persistence: image palette swatches restored after reload');
     ok(palRemembered.mineOption && palRemembered.customOption, 'persistence: "My palette" options present after reload');
+    ok(palRemembered.limScan && palRemembered.limCustom, 'persistence: liminal stack remembered after reload');
 
     ok(pageErrors.length === 0, 'no uncaught page errors' + (pageErrors.length ? ': ' + pageErrors[0] : ''));
   } catch (e) {
