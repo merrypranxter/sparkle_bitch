@@ -1,8 +1,9 @@
 /* Sparkle Bitch — render.js
- * Composite one frame. Three cases, all driven by phase01 (loop-safe):
+ * Composite one frame. Four cases, all driven by phase01 (loop-safe):
  *   1. TEXT mode  — glitter-filled letterforms + outline + shadow (transparent bg)
- *   2. IMAGE      — base + additive sparkle sprite layer (the original engine)
- *   3. IMAGE + glitter fill — a Picasion-style animated glitter overlay, on the
+ *   2. LIMINAL    — the Liminal Engine: degrade/haunt the base image, no sprites
+ *   3. IMAGE      — base + additive sparkle sprite layer (the original engine)
+ *   4. IMAGE + glitter fill — a Picasion-style animated glitter overlay, on the
  *      whole image or a painted selection, on top of (or instead of) sprites.
  */
 (function (global) {
@@ -156,6 +157,12 @@
 
     // ---- TEXT MODE ----
     if (opts.text && opts.glitterField) { renderText(ctx, opts.text, opts.glitterField, params, phase01, opts); return; }
+
+    // ---- LIMINAL MODE — hand the whole frame to the Liminal Engine ----
+    if (opts.liminal && SB.liminal) {
+      SB.liminal.render(ctx, base, opts.liminal, phase01, still, opts.matte, params.seed);
+      return;
+    }
 
     // ---- base ----
     ctx.setTransform(1, 0, 0, 1, 0, 0);
