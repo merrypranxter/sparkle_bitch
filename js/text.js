@@ -58,7 +58,7 @@
     ['Handwriting', [
       ['marker', 'Marker', "'Permanent Marker', cursive"],
       ['rocksalt', 'Rock Salt', "'Rock Salt', cursive"],
-      ['shadows', 'Shadows Into Light', "'Shadows Into Light', cursive"],
+      ['shadows', 'Shadows', "'Shadows Into Light', cursive"],
       ['comicneue', 'Comic Neue', "'Comic Neue', 'Comic Sans MS', cursive"]
     ]]
   ];
