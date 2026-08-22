@@ -318,6 +318,106 @@ async function poll(page, fn, timeout, label) {
     });
     ok(cap.h <= 8000 && cap.w <= 8000, 'text: canvas clamped on huge input (' + cap.w + 'x' + cap.h + ')');
 
+    // ---- REGRESSION: repeat GIF export via the real button (no refresh) ----
+    await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setText({ text: 'AGAIN', size: 72, outlines: [], shadow: false });
+      S.setGlitter({ glitterStyle: 'gold', glitterIntensity: 1, glitterGrain: 1, lengthSec: 1, fps: 8 });
+    });
+    await sleep(200);
+    let reexportOK = true, busyStuck = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await page.evaluate(() => {
+        document.getElementById('status').textContent = '';
+        document.getElementById('exportGif').click();
+      });
+      const finished = await poll(page, () => {
+        var s = document.getElementById('status').textContent;
+        return s.indexOf('Saved GIF') === 0 || s.indexOf('⚠') === 0;
+      }, 30000, 'gif re-export #' + attempt).catch(() => false);
+      const st = await page.evaluate(() => ({
+        status: document.getElementById('status').textContent, busy: window.SparkleBitch.state.busy
+      }));
+      if (!finished || st.status.indexOf('Saved GIF') !== 0) reexportOK = false;
+      if (st.busy) busyStuck = true;
+    }
+    ok(reexportOK, 'export bug: GIF export works twice in a row, no refresh');
+    ok(!busyStuck, 'export bug: busy flag always released (buttons never wedge)');
+    const resultUI = await page.evaluate(() => ({
+      shown: !document.getElementById('result').classList.contains('hidden'),
+      saveBtn: !!document.querySelector('#result .result-save')
+    }));
+    ok(resultUI.shown && resultUI.saveBtn, 'export bug: result panel + Save button shown after export');
+
+    // ---- letter spacing + ALL CAPS ----
+    const typo = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setGlitter({ glitterIntensity: 1 });
+      S.setText({ text: 'SPARKLE', size: 80, letterSpacing: 0, caps: false, outlines: [], shadow: false });
+      var tight = S.state.source.width;
+      S.setText({ letterSpacing: 12 });
+      var wide = S.state.source.width;
+      S.setText({ text: 'sparkle', letterSpacing: 0, caps: false });
+      var lower = S.state.source.textRender.maskCanvas;
+      S.setText({ caps: true });
+      var upper = S.state.source.textRender.maskCanvas;
+      // caps render must be identical to typing the caps yourself
+      S.setText({ text: 'SPARKLE', caps: false });
+      var typed = S.state.source.textRender.maskCanvas;
+      function px(cv) { return cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data.join(','); }
+      return { tight: tight, wide: wide, capsMatch: px(upper) === px(typed), capsDiffer: px(lower) !== px(typed) };
+    });
+    ok(typo.wide > typo.tight + 30, 'text: letter spacing widens lines (' + typo.tight + ' -> ' + typo.wide + ')');
+    ok(typo.capsMatch && typo.capsDiffer, 'text: ALL CAPS renders uppercase (same as typing caps)');
+
+    // ---- grain size + extended density + new styles ----
+    const grain = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setText({ text: 'FINE', size: 80, caps: false });
+      S.setGlitter({ glitterStyle: 'silver', glitterGrain: 0.25 });
+      var fineGrain = S.state.glitterField.grain;
+      var cv = S.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, opaque = 0;
+      for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) opaque++;
+      var gslider = document.getElementById('glitterGrain');
+      var dslider = document.getElementById('glitterDensity');
+      return { grain: fineGrain, opaque: opaque, gmin: gslider && gslider.min, dmax: dslider && dslider.max };
+    });
+    ok(grain.grain === 0.25, 'glitter: grain size reaches the field (0.25x = extra fine)');
+    ok(grain.opaque > 200, 'glitter: fine grain still fills letters (' + grain.opaque + ' px)');
+    ok(grain.gmin === '0.2', 'glitter: grain slider goes down to 0.2');
+    ok(grain.dmax === '2', 'glitter: density slider goes up to 2');
+    const maxSizeMin = await page.evaluate(() => document.getElementById('maxSize').min);
+    ok(maxSizeMin === '4', 'image: Max size slider now goes down to 4px');
+
+    // density 0..1 unchanged; >1 packs tighter; fine grain + max density = way more flakes
+    const dens = await page.evaluate(() => {
+      function n(density, grain) { return SB.glitter.buildField(400, 300, 'silver', density, 42, grain).flakes.length; }
+      return { d06: n(0.6, 1), d06fine: n(0.6, 0.2), d1: n(1, 1), d2: n(2, 1), capped: n(2, 0.2) };
+    });
+    ok(dens.d06 === dens.d06fine, 'glitter: grain does not change flake count (' + dens.d06 + ')');
+    ok(dens.d06 === Math.round(400 * 300 / (6.56 * 6.56)), 'glitter: density 0..1 mapping unchanged (' + dens.d06 + ' flakes)');
+    ok(dens.d2 > dens.d1 * 2, 'glitter: density 2 packs much tighter than 1 (' + dens.d1 + ' -> ' + dens.d2 + ')');
+    ok(dens.capped <= 40000, 'glitter: flake count capped for perf (' + dens.capped + ')');
+
+    const styles2 = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
+    ['sugarpaper', 'creamsicle', 'blueskies', 'rosequartz', 'allpink', 'allblue', 'allpurple', 'allgreen', 'sherbet', 'toxic', 'peach', 'berry', 'sunset', 'bubblegum']
+      .forEach(function (id) { ok(styles2.indexOf(id) >= 0, 'glitter: new style "' + id + '" present'); });
+    ok(styles2.length >= 30, 'glitter: big style set (' + styles2.length + ' styles)');
+
+    // light styles really are light-based with no near-white flakes
+    const lightCheck = await page.evaluate(() => {
+      var out = [];
+      ['sugarpaper', 'creamsicle', 'blueskies', 'rosequartz', 'peach', 'bubblegum'].forEach(function (id) {
+        var st = SB.glitter.STYLES[id];
+        var baseLum = 0.2126 * st.base[0] + 0.7152 * st.base[1] + 0.0722 * st.base[2];
+        var hasWhite = st.palette.some(function (c) { return c[0] > 245 && c[1] > 245 && c[2] > 245; });
+        out.push(baseLum > 180 && !hasWhite);
+      });
+      return out.every(function (x) { return x; });
+    });
+    ok(lightCheck, 'glitter: light styles have light bases + NO invisible white flakes');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
