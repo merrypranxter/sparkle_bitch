@@ -418,6 +418,256 @@ async function poll(page, fn, timeout, label) {
     });
     ok(lightCheck, 'glitter: light styles have light bases + NO invisible white flakes');
 
+    // ---- IMAGE PLACEMENT: detection modes / weights / trace / scatter ----
+    await page.evaluate(async () => {
+      var W = 240, H = 180, c = document.createElement('canvas'); c.width = W; c.height = H;
+      var x = c.getContext('2d');
+      x.fillStyle = '#050508'; x.fillRect(0, 0, W, H);
+      x.fillStyle = '#ffffff'; x.fillRect(30, 30, 50, 50);      // bright blob (30..80, 30..80)
+      x.fillStyle = '#888888'; x.fillRect(179, 20, 2, 140);     // gray vertical line (x~180, y 20..160)
+      var blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      window.SparkleBitch.openFile(new File([blob], 'place.png', { type: 'image/png' }));
+    });
+    await poll(page, () => window.SparkleBitch.state.mode === 'image' && window.SparkleBitch.state.source, 5000, 'placement image loaded');
+
+    const place = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      var nearLine = function (p) { return Math.abs(p.nx * 240 - 180) <= 5; };
+      var inBlobStrict = function (p) { return p.nx * 240 >= 34 && p.nx * 240 <= 76 && p.ny * 180 >= 34 && p.ny * 180 <= 76; };
+      function run(o) {
+        SBM.setGlitter(o); SBM.redetect();
+        return SBM.state.instances;
+      }
+      var out = {};
+      // edges (grid): some points land on the gray line
+      var eg = run({ detectMode: 'edges', trace: false, jitter: 0, spacing: 10, count: 700, lumaThreshold: 150, contrastThreshold: 60 });
+      out.edgesTotal = eg.length; out.edgesOnLine = eg.filter(nearLine).length;
+      // edges + trace: chains hug the line and span its length
+      var tr = run({ detectMode: 'edges', trace: true });
+      var trLine = tr.filter(nearLine);
+      out.traceTotal = tr.length; out.traceOnLine = trLine.length;
+      out.traceSpan = trLine.length
+        ? Math.max.apply(null, trLine.map(function (p) { return p.ny; })) - Math.min.apply(null, trLine.map(function (p) { return p.ny; }))
+        : 0;
+      // scatter: exactly `count` points, ignores the image
+      var sc = run({ detectMode: 'scatter', trace: false, count: 120 });
+      out.scatterCount = sc.length;
+      // shadow: avoids the bright blob interior
+      var sh = run({ detectMode: 'shadow', count: 700 });
+      out.shadowTotal = sh.length; out.shadowInBlob = sh.filter(inBlobStrict).length;
+      // count cap
+      out.cap = run({ detectMode: 'both', count: 40 }).length;
+      // spacing: tighter grid = more points
+      out.coarse = run({ detectMode: 'both', count: 2500, spacing: 30 }).length;
+      out.fine = run({ detectMode: 'both', count: 2500, spacing: 8 }).length;
+      // weights: luma-only scoring -> top points are the blob; edge-only -> none inside it
+      var wl = run({ detectMode: 'both', count: 10, spacing: 10, lumaWeight: 2, edgeWeight: 0 });
+      out.lumaAllInBlob = wl.every(function (p) { return p.nx * 240 >= 28 && p.nx * 240 <= 82 && p.ny * 180 >= 28 && p.ny * 180 <= 82; });
+      var we = run({ detectMode: 'both', count: 10, spacing: 10, lumaWeight: 0, edgeWeight: 2 });
+      out.edgeNoneInBlob = we.every(function (p) { return !inBlobStrict(p); });
+      // back to sane defaults for later blocks
+      run({ detectMode: 'both', trace: false, jitter: 0.35, spacing: 0, count: 700, lumaWeight: 0.75, edgeWeight: 0.6 });
+      return out;
+    });
+    ok(place.edgesTotal > 0 && place.edgesOnLine >= 3, 'placement: edges mode finds the line (' + place.edgesOnLine + '/' + place.edgesTotal + ')');
+    ok(place.traceOnLine >= 8, 'placement: trace chains along the line (' + place.traceOnLine + ' pts)');
+    ok(place.traceSpan >= 0.45, 'placement: trace spans the line (ny span ' + place.traceSpan.toFixed(2) + ')');
+    ok(place.scatterCount === 120, 'placement: scatter returns exactly count points (' + place.scatterCount + ')');
+    ok(place.shadowTotal > 0 && place.shadowInBlob === 0, 'placement: shadow mode avoids bright blob (' + place.shadowTotal + ' pts, ' + place.shadowInBlob + ' in blob)');
+    ok(place.cap <= 40, 'placement: count cap respected (' + place.cap + ')');
+    ok(place.fine > place.coarse, 'placement: tighter spacing = more sparkles (' + place.coarse + ' -> ' + place.fine + ')');
+    ok(place.lumaAllInBlob, 'placement: luma-only weighting tops the blob');
+    ok(place.edgeNoneInBlob, 'placement: edge-only weighting skips the blob interior');
+
+    // ---- DUST LAYER: fine glitter halo around detected centres ----
+    const dustT = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      function bright() {
+        var cv = SBM.renderStillCanvas();
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = 0;
+        for (var i = 0; i < d.length; i += 4) if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 150) n++;
+        return n;
+      }
+      SBM.setGlitter({ dust: false }); var off = bright();
+      SBM.setGlitter({ dust: true, dustDensity: 1.5, dustGrain: 0.3, dustIntensity: 1 });
+      var hasField = !!(SBM.state.dust && SBM.state.dust.field && SBM.state.dust.field.flakes.length > 0);
+      var flakes = hasField ? SBM.state.dust.field.flakes.length : 0;
+      var on = bright();
+      SBM.setGlitter({ dust: false });
+      return { hasField: hasField, flakes: flakes, off: off, on: on };
+    });
+    ok(dustT.hasField, 'dust: halo field built (' + dustT.flakes + ' flakes)');
+    ok(dustT.on > dustT.off + 50, 'dust: fine glitter halo renders (' + dustT.off + ' -> ' + dustT.on + ' bright px)');
+
+    // ---- CUSTOM IMAGE PALETTE: swatches drive the 'mine' palette + persist ----
+    const imgPal = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      var sw = document.querySelectorAll('#imgCustomPalette input[type=color]');
+      if (!sw.length) return { swatches: 0 };
+      sw[0].value = '#ff0000'; sw[0].dispatchEvent(new Event('input', { bubbles: true }));
+      sw[1].value = '#00ff00'; sw[1].dispatchEvent(new Event('input', { bubbles: true }));
+      var sel = document.getElementById('paletteId');
+      sel.value = 'mine'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      var p = SBM.state.params.palette;
+      var stored = JSON.parse(localStorage.getItem('sb-custom-image') || '[]');
+      return {
+        swatches: sw.length,
+        palFirst: p && p[0] ? p[0].join(',') : 'none',
+        palSecond: p && p[1] ? p[1].join(',') : 'none',
+        storedFirst: stored[0] || 'none',
+        mineOption: !!document.querySelector('#paletteId option[value="mine"]'),
+        glitterStylesInPicker: document.querySelectorAll('#paletteId option').length
+      };
+    });
+    ok(imgPal.swatches === 5, 'palette: image custom palette has 5 swatches');
+    ok(imgPal.palFirst === '255,0,0' && imgPal.palSecond === '0,255,0', 'palette: custom swatches drive the image palette (' + imgPal.palFirst + ')');
+    ok(imgPal.storedFirst === '#ff0000', 'palette: custom palette saved to localStorage');
+    ok(imgPal.mineOption, 'palette: "My palette" option at the end of the list');
+    ok(imgPal.glitterStylesInPicker >= 30, 'palette: all glitter styles usable as image palettes (' + imgPal.glitterStylesInPicker + ' options)');
+
+    // ---- NEW SPRITE SETS + COLOUR MODES (pure engine) ----
+    const spr = await page.evaluate(() => {
+      var sets = SB.sparkles.STYLE_SETS;
+      var centers = [];
+      for (var i = 0; i < 40; i++) centers.push({ nx: (i % 8) / 8 + 0.06, ny: Math.floor(i / 8) / 5 + 0.1, size: 0.8, color: [255, 0, 0], score: 1 });
+      function cols(o) { return SB.sparkles.build(centers, o, SB.util.mulberry32(7)).map(function (s) { return s.color; }); }
+      var single = cols({ colorMode: 'single', singleColor: [255, 0, 0] });
+      var comp = cols({ colorMode: 'complement' });
+      var pas = cols({ colorMode: 'pastel' });
+      var neo = cols({ colorMode: 'neon' });
+      var bfly = SB.sparkles.build(centers, { styleMix: 'butterflies' }, SB.util.mulberry32(3));
+      return {
+        sets: ['butterflies', 'garden', 'bokeh', 'y2k'].every(function (id) { return !!sets[id]; }),
+        star8: sets.stars.some(function (e) { return e[0] === 'star8'; }),
+        allButterfly: bfly.some(function (s) { return s.style === 'butterfly'; }) &&
+          bfly.every(function (s) { return sets.butterflies.some(function (e) { return e[0] === s.style; }); }),
+        singleAllRed: single.every(function (c) { return c[0] === 255 && c[1] === 0 && c[2] === 0; }),
+        compCyan: comp.every(function (c) { return c[0] < 90 && c[1] > 190 && c[2] > 190; }),
+        pastelSoft: pas.every(function (c) { return c[0] > 200 && c[1] > 90 && c[2] > 90; }),
+        neonHot: neo.every(function (c) { return c[0] === 255 && c[1] < 90; })
+      };
+    });
+    ok(spr.sets, 'sprites: butterflies/garden/bokeh/y2k sets present');
+    ok(spr.star8, 'sprites: star8 joined the stars set');
+    ok(spr.allButterfly, 'sprites: butterflies set builds only butterflies');
+    ok(spr.singleAllRed, 'colors: single-color mode forces the picked color');
+    ok(spr.compCyan, 'colors: complement mode flips red to cyan');
+    ok(spr.pastelSoft, 'colors: pastel mode softens');
+    ok(spr.neonHot, 'colors: neon mode saturates');
+
+    // ---- NEW CONTROLS EXIST ----
+    const ui = await page.evaluate(() => {
+      var ids = ['detectMode', 'lumaWeight', 'edgeWeight', 'count', 'spacing', 'jitter', 'trace', 'showDetect',
+        'spriteScale', 'drift', 'motion', 'depthLayers', 'paletteId', 'singleColor', 'imgCustomPalette',
+        'textCustomPalette', 'dustOn', 'dustDensity', 'dustGrain', 'dustIntensity',
+        'undoBtn', 'compareBtn', 'chaosBtn', 'savedLooks', 'saveLookBtn'];
+      var missing = ids.filter(function (id) { return !document.getElementById(id); });
+      function opts(id) { return Array.prototype.map.call(document.getElementById(id).options, function (o) { return o.value; }); }
+      return {
+        missing: missing,
+        modes: opts('detectMode'), colorModes: opts('colorMode'), shapes: opts('styleMix'), motions: opts('motion')
+      };
+    });
+    ok(ui.missing.length === 0, 'ui: all new controls present' + (ui.missing.length ? ' (missing: ' + ui.missing.join(',') + ')' : ''));
+    ok(['both', 'bright', 'edges', 'shadow', 'scatter'].every(function (m) { return ui.modes.indexOf(m) >= 0; }), 'ui: detection mode options complete');
+    ok(['single', 'complement', 'pastel', 'neon'].every(function (m) { return ui.colorModes.indexOf(m) >= 0; }), 'ui: new colour modes in the picker');
+    ok(['butterflies', 'garden', 'bokeh', 'y2k'].every(function (m) { return ui.shapes.indexOf(m) >= 0; }), 'ui: new shape sets in the picker');
+    ok(['twinkle', 'fade', 'pulse'].every(function (m) { return ui.motions.indexOf(m) >= 0; }), 'ui: motion modes in the picker');
+
+    // ---- MOTION / DRIFT / DEPTH / SPRITE-SCALE wire through and render ----
+    const anim = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      SBM.setGlitter({ motion: 'pulse', drift: 0.6, depthLayers: true, spriteScale: 0.5 });
+      SBM.redetect();
+      var p = SBM.state.params;
+      var snap = { motion: p.motion, drift: p.drift, depth: p.depthLayers, scale: p.spriteScale };
+      var cv = SBM.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, hot = 0;
+      for (var i = 0; i < d.length; i += 4) if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 180) hot++;
+      var depths = SBM.state.instances.map(function (s) { return s.depth; });
+      SBM.setGlitter({ motion: 'twinkle', drift: 0, depthLayers: false, spriteScale: 1 });
+      SBM.redetect();
+      return { motion: snap.motion, drift: snap.drift, depth: snap.depth, scale: snap.scale, hot: hot, depthVar: Math.max.apply(null, depths) - Math.min.apply(null, depths) };
+    });
+    ok(anim.motion === 'pulse' && anim.drift === 0.6 && anim.depth === true && anim.scale === 0.5, 'anim: motion/drift/depth/sprite-scale params land');
+    ok(anim.hot > 50, 'anim: pulse+depth+drift still renders (' + anim.hot + ' hot px)');
+    ok(anim.depthVar > 0.2, 'anim: instances carry varied depths (' + anim.depthVar.toFixed(2) + ')');
+
+    // ---- UNDO: restores the mask after a pen stroke ----
+    const undo = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      SBM.state.tool = 'pen';
+      var v = document.getElementById('view'), r = v.getBoundingClientRect();
+      v.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.left + 30, clientY: r.top + 30, bubbles: true }));
+      v.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 130, clientY: r.top + 110, bubbles: true }));
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      var stroked = SBM.state.penCenters.length > 0;
+      document.getElementById('undoBtn').click();
+      var restored = SBM.state.penCenters.length === 0;
+      SBM.state.tool = 'auto';
+      return { stroked: stroked, restored: restored };
+    });
+    ok(undo.stroked, 'undo: pen stroke adds sparkle points');
+    ok(undo.restored, 'undo: button restores the pre-stroke state');
+
+    // ---- COMPARE: holding the eye suppresses sparkles ----
+    const cmp = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      var btn = document.getElementById('compareBtn');
+      btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      var held = SBM.state.compare === true;
+      btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      var released = SBM.state.compare === false;
+      return { held: held, released: released };
+    });
+    ok(cmp.held && cmp.released, 'compare: hold-to-compare toggles the bare view');
+
+    // ---- CHAOS DICE: randomizes without throwing ----
+    const chaos = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      function snap() {
+        var p = SBM.state.params;
+        return JSON.stringify([p.detectMode, p.colorMode, p.paletteId, p.motion, p.speed, p.density, p.jitter, p.styleMix]);
+      }
+      var before = snap();
+      document.getElementById('chaosBtn').click();
+      return { changed: snap() !== before, noThrow: true };
+    });
+    ok(chaos.changed, 'chaos: dice rerolls the look');
+
+    // ---- CUSTOM TEXT PALETTE: base + flakes register as a glitter style ----
+    const textPal = await page.evaluate(() => {
+      var SBM = window.SparkleBitch;
+      var base = document.getElementById('textPalBase');
+      base.value = '#102030'; base.dispatchEvent(new Event('input', { bubbles: true }));
+      var flakes = document.querySelectorAll('.textPalFlake');
+      if (flakes.length) { flakes[0].value = '#ff00ff'; flakes[0].dispatchEvent(new Event('input', { bubbles: true })); }
+      var st = SB.glitter.STYLES.custom;
+      SBM.setMode('text');
+      SBM.setText({ text: 'MINE', size: 90, outlines: [], shadow: false });
+      // fixed seed: chaos dice ran earlier and would make flake placement random
+      SBM.setGlitter({ glitterStyle: 'custom', glitterIntensity: 1, seed: 1234 });
+      var cv = SBM.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, magenta = 0, opaque = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        if (d[i + 3] > 180) { opaque++; if (d[i] > 180 && d[i + 1] < 90 && d[i + 2] > 180) magenta++; }
+      }
+      var stored = JSON.parse(localStorage.getItem('sb-custom-text') || '{}');
+      return {
+        flakeInputs: flakes.length,
+        registered: !!st,
+        baseOk: st && st.base.join(',') === '16,32,48',
+        flakeOk: st && st.palette[0].join(',') === '255,0,255',
+        opaque: opaque, magenta: magenta,
+        storedBase: stored.base || 'none',
+        optionLabel: (document.querySelector('#glitterStyle option[value="custom"]') || {}).textContent || 'none'
+      };
+    });
+    ok(textPal.flakeInputs === 5, 'text palette: 5 flake swatches');
+    ok(textPal.registered && textPal.baseOk && textPal.flakeOk, 'text palette: custom style registered from swatches');
+    ok(textPal.opaque > 100 && textPal.magenta > 10, 'text palette: custom flakes render in the letters (' + textPal.magenta + ' magenta px)');
+    ok(textPal.storedBase === '#102030', 'text palette: saved to localStorage');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
@@ -473,6 +723,21 @@ async function poll(page, fn, timeout, label) {
       });
     }, optionHas.toString());
     ok(remembered, 'fonts: custom font is REMEMBERED after a page reload');
+
+    // ---- custom palettes persist across reloads ----
+    const palRemembered = await page.evaluate(() => {
+      var st = SB.glitter.STYLES.custom;
+      var sw = document.querySelectorAll('#imgCustomPalette input[type=color]');
+      return {
+        textBase: st ? st.base.join(',') : 'none',
+        imgFirst: sw.length ? sw[0].value : 'none',
+        mineOption: !!document.querySelector('#paletteId option[value="mine"]'),
+        customOption: !!document.querySelector('#glitterStyle option[value="custom"]')
+      };
+    });
+    ok(palRemembered.textBase === '16,32,48', 'persistence: custom text palette re-registered after reload');
+    ok(palRemembered.imgFirst === '#ff0000', 'persistence: image palette swatches restored after reload');
+    ok(palRemembered.mineOption && palRemembered.customOption, 'persistence: "My palette" options present after reload');
 
     ok(pageErrors.length === 0, 'no uncaught page errors' + (pageErrors.length ? ': ' + pageErrors[0] : ''));
   } catch (e) {
