@@ -68,11 +68,22 @@ body.has-image .drop-hint { display: none; }
 .drop-small { font-size: 13px; }
 
 .result { margin-top: 12px; padding: 12px; border: 1px solid var(--line);
-  border-radius: var(--radius); background: var(--panel); text-align: center; }
+  border-radius: var(--radius); background: var(--panel); text-align: center;
+  scroll-margin-top: 12px; }
 .result.hidden { display: none; }
 .result-media { max-width: 100%; border-radius: 8px; max-height: 360px; }
-.result-save { display: inline-block; margin-top: 8px; color: var(--cyan);
-  text-decoration: none; font-weight: 700; }
+.result-save {
+  display: block; margin: 10px auto 2px; padding: 10px 18px; max-width: 320px;
+  color: #fff; text-decoration: none; font-weight: 800; font-size: 15px;
+  background: linear-gradient(90deg, var(--pink), #a15bff);
+  border-radius: 10px; box-shadow: 0 0 18px rgba(255,95,210,.35);
+}
+.result-save:hover { filter: brightness(1.12); }
+@keyframes resultFlash {
+  0% { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(79,227,255,.45); }
+  100% { border-color: var(--line); box-shadow: none; }
+}
+.result.flash { animation: resultFlash 1.2s ease-out 2; }
 
 /* ---- panel ---- */
 .panel {

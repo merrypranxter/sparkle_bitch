@@ -49,10 +49,11 @@
   function fieldFor(style, w, h, params) {
     var d = params.glitterDensity != null ? params.glitterDensity : 0.6;
     var s = params.seed != null ? params.seed : 1234;
-    var key = style + '|' + w + '|' + h + '|' + d + '|' + s;
+    var g = params.glitterGrain != null ? params.glitterGrain : 1;
+    var key = style + '|' + w + '|' + h + '|' + d + '|' + s + '|' + g;
     if (!_fields[key]) {
       if (Object.keys(_fields).length > 48) _fields = {};
-      _fields[key] = GL.buildField(w, h, style, d, s);
+      _fields[key] = GL.buildField(w, h, style, d, s, g);
     }
     return _fields[key];
   }
@@ -136,7 +137,7 @@
       var glow = params.glow != null ? params.glow : 0.6;
       for (var i = 0; i < insts.length; i++) {
         var inst = insts[i], s = stateOf(inst, params, phase01, still);
-        var sz = Math.max(6, s.size), sprite = SPK.getSprite(inst.style, inst.color, glow);
+        var sz = Math.max(3, s.size), sprite = SPK.getSprite(inst.style, inst.color, glow);
         var x = inst.nx * W, y = inst.ny * H;
         lctx.save(); lctx.globalAlpha = s.alpha; lctx.translate(x, y);
         if (s.angle) lctx.rotate(s.angle);

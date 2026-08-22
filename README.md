@@ -9,8 +9,10 @@ modes:
   and (optionally) lays animated glitter over the photo.
 - **Text:** type words (multi-line, with left/center/right align + line-spacing)
   and get **animated glitter text** — letterforms filled with shimmering "dry
-  glitter" in 19 styles (rainbow, confetti, all-neon, unicorn, galaxy, fire…),
-  on a transparent background so you can paste it anywhere. Add **stackable
+  glitter" in 33 styles (rainbow, confetti, all-neon, unicorn, galaxy, fire…
+  plus light-background sets, all-pink/all-blue/all-purple/all-green monochrome
+  sets, and more), on a transparent background so you can paste it anywhere.
+  Set line-spacing AND letter-spacing, flip on ALL CAPS, and add **stackable
   outlines**, each its own solid colour *or* its own glitter.
 
 Everything exports as a **PNG**, **animated GIF**, or **video**.
@@ -40,13 +42,14 @@ Then:
 | Control | What it does |
 |---|---|
 | **Intensity** | Overall strength / brightness of the sparkles |
-| **Max size** | How big the biggest sparkles get |
+| **Max size** | How big the biggest sparkles get (down to 4px for a fine dusting) |
 | **Density** | How many sparkles (finer detection grid) |
 | **Glow** | Size and strength of the halo behind each sparkle |
 | **Color boost** | Saturation of the sparkle colour |
 | **Speed** | How fast they twinkle (whole cycles per loop, so GIFs stay seamless) |
 | **Shapes** | Stars / sparkles / hearts / icons / mixed |
 | **Colors** | From photo (inherit local colour) · Palette · White |
+| **Grain size** | (glitter styles) flake size — down to 0.2× for extra-fine glitter dust |
 
 **Advanced** (tucked away) adds Glitterboo-style placement tools:
 

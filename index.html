@@ -52,7 +52,7 @@
           <label class="ctl"><span>Intensity <b data-label-for="intensity"></b></span>
             <input id="intensity" type="range" min="0" max="1" step="0.05" /></label>
           <label class="ctl"><span>Max size <b data-label-for="maxSize"></b></span>
-            <input id="maxSize" type="range" min="10" max="120" step="1" /></label>
+            <input id="maxSize" type="range" min="4" max="120" step="1" /></label>
           <label class="ctl"><span>Density <b data-label-for="density"></b></span>
             <input id="density" type="range" min="0" max="1" step="0.05" /></label>
           <label class="ctl"><span>Glow <b data-label-for="glow"></b></span>
@@ -99,6 +99,8 @@
           <label class="ctl"><span>Line spacing <b data-label-for="textLeading"></b></span>
             <input id="textLeading" type="range" min="0.9" max="2.4" step="0.05" /></label>
         </div>
+        <label class="ctl"><span>Letter spacing <b data-label-for="textSpacing"></b></span>
+          <input id="textSpacing" type="range" min="-4" max="40" step="0.5" /></label>
         <div class="tool-row">
           <button id="loadFontBtn" class="btn tiny">＋ Load font file</button>
           <span class="hint">.ttf / .otf / .woff — use any font you download</span>
@@ -106,6 +108,7 @@
         <div class="tool-row">
           <label><input type="checkbox" id="textBold" checked /> Bold</label>
           <label><input type="checkbox" id="textItalic" /> Italic</label>
+          <label><input type="checkbox" id="textCaps" /> ALL CAPS</label>
           <label><input type="checkbox" id="textShadow" checked /> Shadow</label>
         </div>
         <div class="group">
@@ -124,7 +127,9 @@
         <div class="group-title">✨ Glitter</div>
         <label class="ctl"><span>Style</span><select id="glitterStyle"></select></label>
         <label class="ctl"><span>Glitter density <b data-label-for="glitterDensity"></b></span>
-          <input id="glitterDensity" type="range" min="0.1" max="1" step="0.05" /></label>
+          <input id="glitterDensity" type="range" min="0.1" max="2" step="0.05" /></label>
+        <label class="ctl"><span>Grain size <b data-label-for="glitterGrain"></b></span>
+          <input id="glitterGrain" type="range" min="0.2" max="2" step="0.05" /></label>
         <label class="ctl"><span>Glitter strength <b data-label-for="glitterIntensity"></b></span>
           <input id="glitterIntensity" type="range" min="0.2" max="1" step="0.05" /></label>
       </div>
