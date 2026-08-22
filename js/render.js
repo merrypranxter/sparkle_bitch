@@ -28,19 +28,40 @@
   }
 
   // Per-instance animated state for sparkle sprites.
+  // All motion is a pure function of phase01 with integer cycles, so every
+  // mode (twinkle / fade / pulse / drift) loops cleanly in a GIF.
   function stateOf(inst, params, phase01, still) {
     var t;
+    var depth = params.depthLayers ? (inst.depth || 1) : 1;
+    var speedMult = 0.5 + 0.5 * depth;   // far layers twinkle slower
     if (still) {
       t = 0.9;
     } else {
-      var depth = inst.wob || 1;
-      t = 0.5 + 0.5 * Math.sin(A.TAU * Math.max(1, Math.round(params.speed || 1)) * phase01 + inst.phase);
-      t = 0.5 + (t - 0.5) * depth;
+      var wob = inst.wob || 1;
+      t = 0.5 + 0.5 * Math.sin(A.TAU * Math.max(1, Math.round((params.speed || 1) * speedMult)) * phase01 + inst.phase);
+      t = 0.5 + (t - 0.5) * wob;
     }
-    var alpha = U.clamp(0.22 + 0.78 * t, 0, 1);
-    var sizeMult = 0.6 + 0.55 * t;
+    var motion = params.motion || 'twinkle';
+    var alpha, sizeMult;
+    if (motion === 'fade') {           // pure alpha breathe, size constant
+      alpha = U.clamp(0.05 + 0.95 * t, 0, 1); sizeMult = 1;
+    } else if (motion === 'pulse') {   // mostly visible, size throbs
+      alpha = U.clamp(0.45 + 0.55 * t, 0, 1); sizeMult = 0.45 + 0.95 * t;
+    } else {                           // classic twinkle
+      alpha = U.clamp(0.22 + 0.78 * t, 0, 1); sizeMult = 0.6 + 0.55 * t;
+    }
+    alpha *= 0.55 + 0.45 * depth;
+    var size = params.maxSize * inst.baseSize * sizeMult * depth * (params.spriteScale || 1);
     var angle = inst.phase + (params.spinRevs ? A.spin(phase01, params.spinRevs * inst.spinDir, 0) : 0);
-    return { alpha: alpha, size: params.maxSize * inst.baseSize * sizeMult, angle: angle };
+    return { alpha: alpha, size: size, angle: angle };
+  }
+
+  // loop-safe float: ping-pong drift, each sparkle in its own phase + direction
+  function driftOffset(inst, params, phase01, minDim) {
+    if (!params.drift) return 0;
+    var amp = params.drift * 0.08 * minDim * (inst.depth || 1);
+    var p = (phase01 + (inst.driftPhase || 0)) % 1;
+    return (A.loopPing(p) - 0.5) * 2 * amp * (inst.spinDir || 1);
   }
 
   // glitter fields for outline styles are cached (normalised, so one per
@@ -111,8 +132,23 @@
     ctx.restore();
   }
 
+  // ---- dust: a dense fine-flake shimmer restricted to detected areas ----
+  function dustOverlay(ctx, dust, phase01, still) {
+    var W = ctx.canvas.width, H = ctx.canvas.height;
+    var lay = textLayerFor(W, H), lc = lay.getContext('2d');
+    lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalCompositeOperation = 'source-over';
+    lc.globalAlpha = 1; lc.clearRect(0, 0, W, H);
+    GL.drawGlitter(lc, dust.field, phase01, { w: W, h: H, base: false, still: still });
+    if (dust.mask) { lc.globalCompositeOperation = 'destination-in'; lc.drawImage(dust.mask, 0, 0, W, H); }
+    ctx.save();
+    ctx.globalCompositeOperation = dust.blend === 'lighter' ? 'lighter' : 'screen';
+    ctx.globalAlpha = U.clamp(dust.intensity != null ? dust.intensity : 0.8, 0, 1);
+    ctx.drawImage(lay, 0, 0);
+    ctx.restore();
+  }
+
   /**
-   * @param opts { still, matte, text(render result), glitterField, glitterOnImage, glitterMask }
+   * @param opts { still, matte, text(render result), glitterField, glitterOnImage, glitterMask, dust }
    */
   function render(ctx, base, insts, params, phase01, opts) {
     opts = opts || {};
@@ -137,8 +173,8 @@
       var glow = params.glow != null ? params.glow : 0.6;
       for (var i = 0; i < insts.length; i++) {
         var inst = insts[i], s = stateOf(inst, params, phase01, still);
-        var sz = Math.max(3, s.size), sprite = SPK.getSprite(inst.style, inst.color, glow);
-        var x = inst.nx * W, y = inst.ny * H;
+        var sz = Math.max(2, s.size), sprite = SPK.getSprite(inst.style, inst.color, glow);
+        var x = inst.nx * W, y = inst.ny * H + (still ? 0 : driftOffset(inst, params, phase01, Math.min(W, H)));
         lctx.save(); lctx.globalAlpha = s.alpha; lctx.translate(x, y);
         if (s.angle) lctx.rotate(s.angle);
         lctx.drawImage(sprite, -sz / 2, -sz / 2, sz, sz); lctx.restore();
@@ -151,11 +187,14 @@
       ctx.drawImage(layer, 0, 0); ctx.restore(); ctx.filter = 'none';
     }
 
+    // ---- dust shimmer over the detected areas (fine, dense) ----
+    if (opts.dust && opts.dust.field) dustOverlay(ctx, opts.dust, phase01, still);
+
     // ---- glitter fill over the image (Picasion style) ----
     if (opts.glitterField && opts.glitterOnImage) glitterOverlay(ctx, opts.glitterField, params, phase01, opts);
   }
 
-  SB.render = { render: render, stateOf: stateOf };
+  SB.render = { render: render, stateOf: stateOf, driftOffset: driftOffset };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SB;
 })(typeof window !== 'undefined' ? window : globalThis);

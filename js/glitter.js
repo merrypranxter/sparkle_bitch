@@ -97,6 +97,19 @@
     return out;
   }
 
+  // Register (or replace) a user style — the "My palette" entry. Kept last in
+  // the picker by convention: the UI appends it after styleList().
+  function registerStyle(id, def) {
+    STYLES[id] = {
+      label: def.label || 'My palette',
+      base: def.base || null,
+      flake: def.flake || 'dot',
+      light: !!def.light,
+      palette: def.palette && def.palette.length ? def.palette : [[255, 255, 255]]
+    };
+    return STYLES[id];
+  }
+
   // Build a seeded flake field for a w x h area at a density (0..2).
   // Positions are normalised so the same field renders at any output size.
   // grain scales flake size: 1 = classic, down to 0.2 for very fine dust.
@@ -165,11 +178,11 @@
     // Pass A — dense colour grain: the packed-glitter texture. Opaque for text
     // (a solid glittery fill), additive for overlay (a sparkly sheen on the photo).
     ctx.globalCompositeOperation = overlay ? 'lighter' : 'source-over';
-    var grainAlpha = overlay ? 0.5 : 0.85;
+    var grainAlpha = overlay ? 0.65 : 0.85;
     for (i = 0; i < flakes.length; i++) {
       f = flakes[i];
       color = hueShift ? U.shiftHue(f.color, hueShift) : f.color;
-      var gs = f.size * scale;
+      var gs = Math.max(0.75, f.size * scale);   // fine grain never goes invisible
       ctx.globalAlpha = grainAlpha;
       ctx.fillStyle = U.rgbToCss(color, 1);
       ctx.fillRect((f.nx * w) - gs / 2, (f.ny * h) - gs / 2, gs, gs);
@@ -212,6 +225,7 @@
   SB.glitter = {
     STYLES: STYLES,
     styleList: styleList,
+    registerStyle: registerStyle,
     buildField: buildField,
     flakeState: flakeState,
     drawGlitter: drawGlitter

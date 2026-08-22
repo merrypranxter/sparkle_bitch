@@ -20,12 +20,17 @@
   }
 
   var STYLE_SETS = {
-    stars: [['star4', 3], ['star6', 2]],
+    stars: [['star4', 3], ['star6', 2], ['star8', 2]],
     sparkles: [['sparkle', 3], ['flare', 2], ['star4', 1]],
     hearts: [['heart', 1]],
     icons: [['heart', 2], ['note', 2], ['diamond', 2]],
+    butterflies: [['butterfly', 3], ['sparkle', 1]],
+    garden: [['flower', 2], ['butterfly', 2], ['heart', 1]],
+    bokeh: [['bokeh', 1]],
     mixed: [['star4', 4], ['sparkle', 4], ['star6', 2], ['flare', 2],
-            ['heart', 1], ['diamond', 1], ['note', 1]]
+            ['heart', 1], ['diamond', 1], ['note', 1]],
+    y2k: [['butterfly', 3], ['star8', 2], ['star4', 2], ['heart', 2],
+          ['note', 1], ['diamond', 1], ['flower', 1]]
   };
 
   function pickStyle(set, rng) {
@@ -59,6 +64,29 @@
     ctx.closePath();
   }
 
+  function butterflyPath(ctx, s) {
+    // four wing lobes + body, centred on (C,C)
+    ctx.beginPath();   // upper wings
+    ctx.ellipse(C - s * 0.48, C - s * 0.30, s * 0.46, s * 0.34, -0.5, 0, 7);
+    ctx.ellipse(C + s * 0.48, C - s * 0.30, s * 0.46, s * 0.34, 0.5, 0, 7);
+    ctx.fill();
+    ctx.beginPath();   // lower wings
+    ctx.ellipse(C - s * 0.34, C + s * 0.34, s * 0.30, s * 0.24, 0.5, 0, 7);
+    ctx.ellipse(C + s * 0.34, C + s * 0.34, s * 0.30, s * 0.24, -0.5, 0, 7);
+    ctx.fill();
+    ctx.fillRect(C - s * 0.07, C - s * 0.5, s * 0.14, s * 1.05);   // body
+  }
+
+  function flowerPath(ctx, s) {
+    for (var i = 0; i < 5; i++) {
+      var a = (Math.PI * 2 / 5) * i - Math.PI / 2;
+      ctx.beginPath();
+      ctx.ellipse(C + Math.cos(a) * s * 0.5, C + Math.sin(a) * s * 0.5, s * 0.34, s * 0.22, a, 0, 7);
+      ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(C, C, s * 0.22, 0, 7); ctx.fill();
+  }
+
   function drawGlow(ctx, color, glow) {
     var rad = C * (0.55 + 0.45 * glow);
     var g = ctx.createRadialGradient(C, C, 0, C, C, rad);
@@ -77,6 +105,7 @@
     ctx.lineJoin = 'round';
     switch (style) {
       case 'star6': starPath(ctx, 6, C * 0.82, C * 0.30); ctx.fill(); break;
+      case 'star8': starPath(ctx, 8, C * 0.86, C * 0.38); ctx.fill(); break;
       case 'sparkle': starPath(ctx, 4, C * 0.92, C * 0.10); ctx.fill(); break;
       case 'flare':
         // specular cross: horizontal + vertical bright streaks
@@ -93,6 +122,26 @@
         ctx.restore();
         break;
       case 'heart': heartPath(ctx, C * 0.9); ctx.fill(); break;
+      case 'butterfly': butterflyPath(ctx, C * 0.85); break;
+      case 'flower': flowerPath(ctx, C * 0.9); break;
+      case 'bokeh':
+        // soft translucent disc — no hard core, no crisp edge
+        var bg = ctx.createRadialGradient(C, C, 0, C, C, C * 0.8);
+        bg.addColorStop(0, U.rgbToCss(color, 0.75));
+        bg.addColorStop(0.7, U.rgbToCss(color, 0.45));
+        bg.addColorStop(1, U.rgbToCss(color, 0));
+        ctx.fillStyle = bg;
+        ctx.beginPath(); ctx.arc(C, C, C * 0.8, 0, 7); ctx.fill();
+        // the classic bokeh rim
+        ctx.strokeStyle = U.rgbToCss(color, 0.5); ctx.lineWidth = C * 0.07;
+        ctx.beginPath(); ctx.arc(C, C, C * 0.62, 0, 7); ctx.stroke();
+        break;
+      case 'x':
+        ctx.save(); ctx.translate(C, C); ctx.rotate(Math.PI / 4);
+        ctx.fillRect(-C * 0.8, -C * 0.14, C * 1.6, C * 0.28);
+        ctx.fillRect(-C * 0.14, -C * 0.8, C * 0.28, C * 1.6);
+        ctx.restore();
+        break;
       case 'diamond':
         ctx.beginPath();
         ctx.moveTo(C, C * 0.18); ctx.lineTo(C * 1.55, C); ctx.lineTo(C, C * 1.82);
@@ -107,7 +156,8 @@
       default: /* star4 */ starPath(ctx, 4, C * 0.85, C * 0.24); ctx.fill();
     }
     // bright hot core so sparkles pop under screen/lighter blending
-    if (style !== 'flare') {
+    // (bokeh stays soft — a hard core would ruin it)
+    if (style !== 'flare' && style !== 'bokeh') {
       var cr = ctx.createRadialGradient(C, C, 0, C, C, C * 0.3);
       cr.addColorStop(0, 'rgba(255,255,255,0.95)');
       cr.addColorStop(1, 'rgba(255,255,255,0)');
@@ -129,6 +179,16 @@
 
   function clearCache() { cache = {}; }
 
+  // ---- colour modes ------------------------------------------------------
+  function pastelize(color) {
+    var hsl = U.rgbToHsl(color[0], color[1], color[2]);   // [h, s, l]
+    return U.hslToRgb(hsl[0], Math.min(hsl[1], 0.55), Math.max(hsl[2], 0.72));
+  }
+  function neonize(color) {
+    var hsl = U.rgbToHsl(color[0], color[1], color[2]);
+    return U.hslToRgb(hsl[0], 1, U.clamp(hsl[2], 0.5, 0.62));
+  }
+
   // ---- instance generation ---------------------------------------------
   // centers: [{nx,ny,size,color,forceColor?}]  (forceColor set for pen pts)
   function build(centers, params, rng) {
@@ -142,10 +202,15 @@
         color = c.forceColor;
       } else if (params.colorMode === 'white') {
         color = [255, 255, 255];
+      } else if (params.colorMode === 'single') {
+        color = (params.singleColor || [255, 255, 255]).slice();
       } else if (params.colorMode === 'palette') {
         color = pal[(rng() * pal.length) | 0].slice();
-      } else { // auto: inherit local colour
+      } else { // auto family: inherit local colour, then restyle it
         color = c.color ? c.color.slice() : [255, 255, 255];
+        if (params.colorMode === 'complement') color = U.shiftHue(color, 180);
+        else if (params.colorMode === 'pastel') color = pastelize(color);
+        else if (params.colorMode === 'neon') color = neonize(color);
       }
       if (params.colorBoost && params.colorBoost !== 1) {
         color = U.boostSaturation(color, params.colorBoost);
@@ -157,7 +222,9 @@
         style: pickStyle(set, rng),
         phase: rng() * Math.PI * 2,
         spinDir: rng() < 0.5 ? -1 : 1,
-        wob: 0.7 + rng() * 0.6   // per-instance twinkle depth variation
+        wob: 0.7 + rng() * 0.6,   // per-instance twinkle depth variation
+        depth: 0.55 + rng() * 0.45, // background layer: smaller, dimmer, slower
+        driftPhase: rng()           // where in its float cycle it starts
       });
     }
     return out;

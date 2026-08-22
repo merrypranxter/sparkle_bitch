@@ -40,6 +40,27 @@
       contrastThreshold: 60,
       maxPoints: 700,
       seed: 1234,
+      // ---- image placement (detection) ----
+      detectMode: 'both',    // bright | edges | both | shadow | scatter
+      lumaWeight: 0.75,      // how much brightness matters when scoring
+      edgeWeight: 0.6,       // how much contrast/edges matter
+      count: 700,            // max sparkles
+      spacing: 0,            // min px between sparkles (0 = derive from density)
+      jitter: 0.35,          // 0..1 organic scatter off the grid
+      trace: false,          // chain sparkles along edges/outlines
+      showDetect: false,     // overlay: show where sparkles will land
+      // ---- sprite look + motion ----
+      spriteScale: 1,        // global sprite size multiplier (fine <-> chunky)
+      motion: 'twinkle',     // twinkle | fade | pulse
+      drift: 0,              // 0..1 float up/down amount (loop-safe)
+      depthLayers: false,    // background sparkle layer (smaller/dimmer/slower)
+      singleColor: [255, 255, 255],  // colorMode 'single'
+      paletteId: 'classic',  // classic | astral | <glitter style id> | custom
+      // ---- dust: dense fine shimmer over detected areas ----
+      dust: false,
+      dustDensity: 1.2,
+      dustGrain: 0.35,
+      dustIntensity: 0.8,
       // glitter (text fill + optional photo overlay)
       glitterStyle: 'silver',
       glitterDensity: 0.6,

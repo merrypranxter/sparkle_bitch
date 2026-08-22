@@ -37,6 +37,7 @@
 
       <div class="row primary-row">
         <button id="openBtn" class="btn mode-image-only">📂 Open</button>
+        <button id="compareBtn" class="btn mode-image-only" title="hold to see the original">👀</button>
         <button id="sparkleBtn" class="btn btn-go">✨ Sparkle it</button>
       </div>
 
@@ -46,6 +47,9 @@
           <span class="preset-label">Look:</span>
           <button id="presetClassic" class="chip active">Classic Y2K</button>
           <button id="presetAstral" class="chip">Astral Trash</button>
+          <select id="savedLooks" class="chip-select" title="Your saved looks"><option value="">My looks…</option></select>
+          <button id="saveLookBtn" class="btn tiny" title="Save current settings as a look">💾</button>
+          <button id="chaosBtn" class="btn tiny" title="Randomize everything (tastefully)">🎲</button>
         </div>
 
         <div class="group">
@@ -53,6 +57,8 @@
             <input id="intensity" type="range" min="0" max="1" step="0.05" /></label>
           <label class="ctl"><span>Max size <b data-label-for="maxSize"></b></span>
             <input id="maxSize" type="range" min="4" max="120" step="1" /></label>
+          <label class="ctl"><span>Sprite size <b data-label-for="spriteScale"></b></span>
+            <input id="spriteScale" type="range" min="0.25" max="1.5" step="0.05" /></label>
           <label class="ctl"><span>Density <b data-label-for="density"></b></span>
             <input id="density" type="range" min="0" max="1" step="0.05" /></label>
           <label class="ctl"><span>Glow <b data-label-for="glow"></b></span>
@@ -61,6 +67,17 @@
             <input id="colorBoost" type="range" min="1" max="2.2" step="0.05" /></label>
           <label class="ctl"><span>Speed <b data-label-for="speed"></b></span>
             <input id="speed" type="range" min="1" max="6" step="1" /></label>
+          <div class="group two">
+            <label class="ctl"><span>Motion</span>
+              <select id="motion">
+                <option value="twinkle">Twinkle</option>
+                <option value="fade">Fade</option>
+                <option value="pulse">Pulse</option>
+              </select></label>
+            <label class="ctl"><span>Drift <b data-label-for="drift"></b></span>
+              <input id="drift" type="range" min="0" max="1" step="0.05" /></label>
+          </div>
+          <label class="ctl check"><input type="checkbox" id="depthLayers" /> Depth layers (far sparkles smaller + slower)</label>
         </div>
 
         <div class="group two">
@@ -68,13 +85,78 @@
             <select id="styleMix">
               <option value="mixed">Mixed</option><option value="stars">Stars</option>
               <option value="sparkles">Sparkles</option><option value="hearts">Hearts</option>
-              <option value="icons">Icons</option>
+              <option value="icons">Icons</option><option value="butterflies">Butterflies</option>
+              <option value="garden">Garden</option><option value="bokeh">Bokeh</option>
+              <option value="y2k">Y2K Everything</option>
             </select></label>
           <label class="ctl"><span>Colors</span>
             <select id="colorMode">
               <option value="auto">From photo</option><option value="palette">Palette</option>
-              <option value="white">White</option>
+              <option value="white">White</option><option value="single">One color</option>
+              <option value="complement">Complement</option><option value="pastel">Pastel</option>
+              <option value="neon">Neon</option>
             </select></label>
+        </div>
+        <div id="paletteRow" class="tool-row hidden">
+          <label class="ctl grow"><span>Palette</span><select id="paletteId"></select></label>
+        </div>
+        <div id="singleColorRow" class="tool-row hidden">
+          <label class="ctl grow"><span>Sparkle color</span><input id="singleColor" type="color" value="#ffffff" /></label>
+        </div>
+        <div id="imgCustomPalette" class="palette-editor hidden">
+          <span class="hint">My palette — click to change:</span>
+          <div class="swatches">
+            <input type="color" class="palSwatch" value="#ff5fd2" />
+            <input type="color" class="palSwatch" value="#4fe3ff" />
+            <input type="color" class="palSwatch" value="#b6ff5a" />
+            <input type="color" class="palSwatch" value="#ffd45c" />
+            <input type="color" class="palSwatch" value="#ffffff" />
+          </div>
+        </div>
+
+        <!-- PLACEMENT: where the sparkles go -->
+        <div class="group">
+          <div class="group-title">🎯 Placement <span class="hint">— where sparkles go</span></div>
+          <label class="ctl"><span>Detect</span>
+            <select id="detectMode">
+              <option value="both">Bright spots + edges</option>
+              <option value="bright">Bright spots only</option>
+              <option value="edges">Edges only (lines!)</option>
+              <option value="shadow">Shadows (dark areas)</option>
+              <option value="scatter">Scatter everywhere</option>
+            </select></label>
+          <label class="ctl"><span>Bright threshold <b data-label-for="lumaThreshold"></b></span>
+            <input id="lumaThreshold" type="range" min="0" max="255" step="1" /></label>
+          <label class="ctl"><span>Contrast threshold <b data-label-for="contrastThreshold"></b></span>
+            <input id="contrastThreshold" type="range" min="0" max="255" step="1" /></label>
+          <label class="ctl"><span>Brightness matters <b data-label-for="lumaWeight"></b></span>
+            <input id="lumaWeight" type="range" min="0" max="2" step="0.05" /></label>
+          <label class="ctl"><span>Edges matter <b data-label-for="edgeWeight"></b></span>
+            <input id="edgeWeight" type="range" min="0" max="2" step="0.05" /></label>
+          <label class="ctl"><span>Max sparkles <b data-label-for="count"></b></span>
+            <input id="count" type="range" min="50" max="2500" step="50" /></label>
+          <label class="ctl"><span>Min spacing <b data-label-for="spacing"></b> <span class="hint">0 = auto</span></span>
+            <input id="spacing" type="range" min="0" max="60" step="1" /></label>
+          <label class="ctl"><span>Jitter <b data-label-for="jitter"></b></span>
+            <input id="jitter" type="range" min="0" max="1" step="0.05" /></label>
+          <div class="tool-row">
+            <label><input type="checkbox" id="trace" /> Trace edges (outline things)</label>
+            <label><input type="checkbox" id="showDetect" /> Show placement</label>
+          </div>
+        </div>
+
+        <!-- DUST: dense fine shimmer on detected areas -->
+        <div class="group">
+          <div class="group-title">🌫️ Dust <span class="hint">— dense fine glitter where the sparkles are</span></div>
+          <label class="ctl check"><input type="checkbox" id="dustOn" /> Add dust shimmer</label>
+          <div id="dustControls">
+            <label class="ctl"><span>Dust density <b data-label-for="dustDensity"></b></span>
+              <input id="dustDensity" type="range" min="0.2" max="2" step="0.05" /></label>
+            <label class="ctl"><span>Dust grain <b data-label-for="dustGrain"></b></span>
+              <input id="dustGrain" type="range" min="0.15" max="1" step="0.05" /></label>
+            <label class="ctl"><span>Dust strength <b data-label-for="dustIntensity"></b></span>
+              <input id="dustIntensity" type="range" min="0.1" max="1" step="0.05" /></label>
+          </div>
         </div>
 
         <label class="ctl check"><input type="checkbox" id="glitterFill" /> ✨ Add glitter fill (over the photo)</label>
@@ -126,6 +208,17 @@
       <div id="glitterGroup" class="group hidden">
         <div class="group-title">✨ Glitter</div>
         <label class="ctl"><span>Style</span><select id="glitterStyle"></select></label>
+        <div id="textCustomPalette" class="palette-editor hidden">
+          <span class="hint">My palette — base + flakes:</span>
+          <div class="swatches">
+            <input type="color" id="textPalBase" value="#3a0a2e" title="letter base" />
+            <input type="color" class="textPalFlake" value="#ff5fd2" />
+            <input type="color" class="textPalFlake" value="#4fe3ff" />
+            <input type="color" class="textPalFlake" value="#b6ff5a" />
+            <input type="color" class="textPalFlake" value="#ffd45c" />
+            <input type="color" class="textPalFlake" value="#ffffff" />
+          </div>
+        </div>
         <label class="ctl"><span>Glitter density <b data-label-for="glitterDensity"></b></span>
           <input id="glitterDensity" type="range" min="0.1" max="2" step="0.05" /></label>
         <label class="ctl"><span>Grain size <b data-label-for="glitterGrain"></b></span>
@@ -159,15 +252,12 @@
             <label><input type="radio" name="tool" id="toolAuto" checked /> Auto</label>
             <label><input type="radio" name="tool" id="toolBrush" /> Brush</label>
             <label><input type="radio" name="tool" id="toolPen" /> Pen</label>
+            <button id="undoBtn" class="btn tiny">↩ Undo</button>
             <button id="clearSel" class="btn tiny">Clear</button>
           </div>
           <p class="hint">Brush = only sparkle where you paint · Pen = force sparkles anywhere</p>
           <label class="ctl"><span>Brush size <b data-label-for="brushSize"></b></span>
             <input id="brushSize" type="range" min="10" max="140" step="1" value="40" /></label>
-          <label class="ctl"><span>Bright threshold <b data-label-for="lumaThreshold"></b></span>
-            <input id="lumaThreshold" type="range" min="0" max="255" step="1" /></label>
-          <label class="ctl"><span>Contrast threshold <b data-label-for="contrastThreshold"></b></span>
-            <input id="contrastThreshold" type="range" min="0" max="255" step="1" /></label>
           <div class="tool-row">
             <label><input type="checkbox" id="hueCycle" /> Hue shimmer</label>
             <label><input type="checkbox" id="spin" /> Spin</label>

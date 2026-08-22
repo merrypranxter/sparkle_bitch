@@ -186,6 +186,21 @@ select option { color: var(--ink); background: var(--bg); font-weight: 400; }
 .outline-row input[type="range"] { height: 20px; }
 .outline-row .btn.tiny { padding: 3px 6px; }
 
+/* ---- palettes / placement extras ---- */
+.chip-select {
+  appearance: none; border: 1px solid var(--line); background: transparent;
+  color: var(--muted); padding: 6px 8px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; font-weight: 700; max-width: 110px;
+}
+.chip-select option { color: var(--ink); background: var(--bg); }
+.ctl.grow { flex: 1; }
+.palette-editor { display: flex; flex-direction: column; gap: 6px; }
+.swatches { display: flex; gap: 6px; }
+.swatches input[type="color"] {
+  flex: 1; width: auto; height: 34px; padding: 2px;
+}
+#compareBtn { flex: 0 0 46px; user-select: none; -webkit-user-select: none; touch-action: none; }
+
 /* ---- responsive: stack on narrow screens ---- */
 @media (max-width: 820px) {
   .app { grid-template-columns: 1fr; }
