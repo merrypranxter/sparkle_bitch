@@ -20,6 +20,8 @@
     instances: [],
     rng: null,
     glitterField: null,
+    dust: null,         // { field, mask, intensity, blend } | null
+    compare: false,     // hold-to-compare: render the bare source
     textOpts: {
       text: 'sparkle bitch', font: 'arialblack', size: 96, bold: true, italic: false,
       align: 'center', leading: 1.3, letterSpacing: 0, caps: false,
@@ -36,6 +38,41 @@
   };
 
   var view = $('view'), vctx = view.getContext('2d');
+
+  // ------------------------------------------------------------- persistence
+  function loadJSON(key, fallback) {
+    try { var v = JSON.parse(localStorage.getItem(key)); return v || fallback; }
+    catch (e) { return fallback; }
+  }
+  function saveJSON(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+  function rgbToHex(c) {
+    return '#' + [c[0], c[1], c[2]].map(function (n) {
+      return ('0' + Math.max(0, Math.min(255, Math.round(n))).toString(16)).slice(-2);
+    }).join('');
+  }
+
+  // user palettes (image swatches + text glitter style), remembered across visits
+  var IMG_PAL_KEY = 'sb-custom-image', TXT_PAL_KEY = 'sb-custom-text';
+  var imageCustomHex = loadJSON(IMG_PAL_KEY, ['#ff5fd2', '#4fe3ff', '#b6ff5a', '#ffd45c', '#ffffff']);
+  var textCustomDef = loadJSON(TXT_PAL_KEY, { base: '#3a0a2e', flakes: ['#ff5fd2', '#4fe3ff', '#b6ff5a', '#ffd45c', '#ffffff'] });
+
+  function imageCustomPalette() { return imageCustomHex.map(U.hexToRgb); }
+  function applyTextCustom() {
+    GL.registerStyle('custom', {
+      label: '✏️ My palette',
+      base: U.hexToRgb(textCustomDef.base),
+      palette: textCustomDef.flakes.map(U.hexToRgb)
+    });
+  }
+
+  // which flake palette the image side sprays with
+  function paletteFor() {
+    var id = state.params.paletteId;
+    if (id === 'mine') return imageCustomPalette();
+    if (PRE.PALETTES[id]) return PRE.PALETTES[id];
+    if (GL.STYLES[id]) return GL.STYLES[id].palette;   // any glitter style works as a palette
+    return PRE.PALETTES.classic;
+  }
 
   // ---------------------------------------------------------------- helpers
   function setStatus(msg) { $('status').textContent = msg || ''; }
@@ -68,25 +105,31 @@
 
   // -------------------------------------------------------------- pipeline
   function redetect() {
-    if (!state.source) return;
+    if (!state.source || state.mode !== 'image') return;
     var p = state.params;
     var centers = A.detectAdaptive(state.source.work, {
+      mode: p.detectMode,
       lumaThreshold: p.lumaThreshold, contrastThreshold: p.contrastThreshold,
-      density: p.density, maxPoints: p.maxPoints, mask: maskArray(), sampleRadius: 2
+      lumaWeight: p.lumaWeight, edgeWeight: p.edgeWeight,
+      count: p.count, spacing: p.spacing || undefined, density: p.density,
+      jitter: p.jitter, trace: p.trace, seed: p.seed,
+      mask: maskArray(), sampleRadius: 2
     }, 24);
     // pen points are forced sparkle centres (colour sampled, white if dark)
     state.centers = centers.concat(state.penCenters);
     rebuild();
+    buildDust();
   }
 
   function rebuild() {
     var p = state.params;
+    p.palette = paletteFor();
     state.rng = U.mulberry32(U.hashSeed(p.seed));
     state.instances = SPK.build(state.centers, p, state.rng);
     setStatus(state.instances.length + ' sparkles');
   }
 
-  // ---- glitter / text ---------------------------------------------------
+  // ---- glitter / text / dust --------------------------------------------
   function refDims() {
     if (state.source) return { w: state.source.width, h: state.source.height };
     return { w: view.width, h: view.height };
@@ -95,6 +138,36 @@
     var d = refDims();
     state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed, state.params.glitterGrain);
   }
+
+  // soft blobs over every detected centre — the dust's "stay here" mask
+  function buildDustMask() {
+    var d = workDims();
+    var c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
+    var ctx = c.getContext('2d');
+    var r = Math.max(16, (state.params.spacing || 22) * 1.8);
+    ctx.fillStyle = '#fff';
+    for (var i = 0; i < state.centers.length; i++) {
+      var x = state.centers[i].nx * d.w, y = state.centers[i].ny * d.h;
+      var g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    }
+    return c;
+  }
+  function buildDust() {
+    if (!state.params.dust || !state.source || state.mode !== 'image') { state.dust = null; return; }
+    var d = refDims();
+    var fit = EXP.fitSize(d.w, d.h, 480);   // dust stays fine + fast at any size
+    state.dust = {
+      field: GL.buildField(fit.w, fit.h, state.params.glitterStyle, state.params.dustDensity, state.params.seed + 77, state.params.dustGrain),
+      mask: buildDustMask(),
+      intensity: state.params.dustIntensity,
+      blend: 'screen'
+    };
+  }
+
   function buildTextNow() {
     state.textSource = MED.makeTextSource(state.textOpts);
     state.source = state.textSource;
@@ -219,6 +292,7 @@
       return { text: state.source.textRender, glitterField: state.glitterField };
     }
     var o = {};
+    if (state.dust) o.dust = state.dust;
     if (state.params.glitterOnImage && state.glitterField) {
       o.glitterField = state.glitterField;
       o.glitterOnImage = true;
@@ -234,29 +308,43 @@
     if (state.source) {
       var T = Math.max(300, (state.params.lengthSec || 2) * 1000);
       var phase = state.playing ? ((ts % T) / T) : 0;
-      var o = renderExtras(); o.matte = currentMatte();
-      R.render(vctx, state.source.drawable, state.instances, state.params, phase, o);
-      if (state.mode === 'image') drawOverlay();
+      var cmp = state.compare && state.mode === 'image';
+      var o = cmp ? {} : renderExtras();
+      o.matte = currentMatte();
+      R.render(vctx, state.source.drawable, cmp ? [] : state.instances, state.params, phase, o);
+      if (state.mode === 'image' && !cmp) drawOverlay();
     }
     requestAnimationFrame(loop);
   }
 
   function drawOverlay() {
-    if (state.tool === 'auto') return;
+    var showDots = state.params.showDetect;
+    if (state.tool === 'auto' && !showDots) return;
     var W = view.width, H = view.height, d = workDims();
-    if (state.maskActive) {
+    if (state.maskActive && state.tool !== 'auto') {
       vctx.save();
       vctx.globalAlpha = 0.28; vctx.globalCompositeOperation = 'source-over';
       vctx.imageSmoothingEnabled = false;
       vctx.drawImage(state.maskCanvas, 0, 0, W, H);
       vctx.restore();
     }
-    if (state.penCenters.length) {
+    if (state.penCenters.length && state.tool !== 'auto') {
       vctx.save();
       vctx.strokeStyle = 'rgba(79,227,255,0.9)'; vctx.lineWidth = 2;
       for (var i = 0; i < state.penCenters.length; i++) {
         var c = state.penCenters[i];
         vctx.beginPath(); vctx.arc(c.nx * W, c.ny * H, 4, 0, 7); vctx.stroke();
+      }
+      vctx.restore();
+    }
+    // "Show placement": a dot everywhere a sparkle will land
+    if (showDots) {
+      vctx.save();
+      vctx.fillStyle = 'rgba(79,227,255,0.85)';
+      vctx.strokeStyle = 'rgba(10,7,16,0.9)'; vctx.lineWidth = 1;
+      for (var j = 0; j < state.centers.length; j++) {
+        var p = state.centers[j], x = p.nx * W, y = p.ny * H;
+        vctx.beginPath(); vctx.arc(x, y, 2.2, 0, 7); vctx.fill(); vctx.stroke();
       }
       vctx.restore();
     }
@@ -271,9 +359,10 @@
       state.imageSource = src;
       state.source = src;
       state.mode = 'image'; applyModeUI();
-      // reset selection
+      // reset selection + undo history
       state.penCenters = []; state.maskActive = false; ensureMaskCanvas();
       state.maskCanvas.getContext('2d').clearRect(0, 0, state.maskCanvas.width, state.maskCanvas.height);
+      undoStack.length = 0;
       // size the visible canvas to the source aspect (cap for perf)
       var sz = EXP.fitSize(src.width, src.height, 960);
       view.width = sz.w; view.height = sz.h;
@@ -289,6 +378,36 @@
   }
 
   // ----------------------------------------------------------- pen / brush
+  var undoStack = [];
+  function pushUndo() {
+    try {
+      var c = ensureMaskCanvas();
+      undoStack.push({
+        w: c.width, h: c.height,
+        pen: state.penCenters.slice(),
+        maskActive: state.maskActive,
+        mask: state.maskActive ? c.getContext('2d').getImageData(0, 0, c.width, c.height) : null
+      });
+      if (undoStack.length > 20) undoStack.shift();
+    } catch (e) {}
+  }
+  function undo() {
+    var s = undoStack.pop();
+    if (!s) { setStatus('Nothing to undo'); return; }
+    state.penCenters = s.pen;
+    var c = ensureMaskCanvas();
+    var ctx = c.getContext('2d');
+    if (s.mask && s.w === c.width && s.h === c.height) {
+      state.maskActive = s.maskActive;
+      ctx.putImageData(s.mask, 0, 0);
+    } else {
+      state.maskActive = false;
+      ctx.clearRect(0, 0, c.width, c.height);
+    }
+    redetect();
+    setStatus('↩ Undone · ' + state.instances.length + ' sparkles');
+  }
+
   function pointerToNorm(ev) {
     var r = view.getBoundingClientRect();
     var x = (ev.clientX - r.left) / r.width;
@@ -331,6 +450,7 @@
   function onDown(ev) {
     if (!state.source || state.mode !== 'image' || state.tool === 'auto') return;
     ev.preventDefault(); drawing = true; lastPen = null;
+    pushUndo();
     var n = pointerToNorm(ev);
     if (state.tool === 'brush') paintMask(n.nx, n.ny);
     else { addPen(n.nx, n.ny); lastPen = n; }
@@ -460,6 +580,68 @@
     });
   }
 
+  // -------------------------------------------------------- palettes / looks
+  function populatePaletteSelect() {
+    var items = [{ id: 'classic', label: 'Classic Y2K' }, { id: 'astral', label: 'Astral Trash' }];
+    GL.styleList().forEach(function (s) { items.push({ id: s.id, label: s.label + ' ✨' }); });
+    items.push({ id: 'mine', label: '✏️ My palette' });
+    populateSelect('paletteId', items);
+  }
+
+  var LOOKS_KEY = 'sb-looks';
+  function refreshLooks(selectId) {
+    var sel = $('savedLooks'); sel.innerHTML = '';
+    var d = document.createElement('option'); d.value = ''; d.textContent = 'My looks…'; sel.appendChild(d);
+    var looks = loadJSON(LOOKS_KEY, {});
+    Object.keys(looks).forEach(function (name) {
+      var o = document.createElement('option'); o.value = name; o.textContent = name; sel.appendChild(o);
+    });
+    sel.value = selectId || '';
+  }
+  function saveLook() {
+    var name = (window.prompt('Name this look:', 'My look') || '').trim();
+    if (!name) return;
+    var looks = loadJSON(LOOKS_KEY, {});
+    looks[name] = JSON.parse(JSON.stringify(state.params));
+    saveJSON(LOOKS_KEY, looks);
+    refreshLooks(name);
+    setStatus('💾 Saved look “' + name + '”');
+  }
+  function applyLook(name) {
+    var looks = loadJSON(LOOKS_KEY, {});
+    var look = looks[name];
+    if (!look) return;
+    for (var k in look) if (look.hasOwnProperty(k)) state.params[k] = look[k];
+    syncControls(); redetect(); buildGlitterField();
+    setStatus('Look “' + name + '” applied ✨');
+  }
+
+  // 🎲 randomize everything, tastefully
+  function chaos() {
+    var r = Math.random;
+    function pick(arr) { return arr[(r() * arr.length) | 0]; }
+    var p = state.params;
+    p.seed = (r() * 1e9) | 0;
+    p.detectMode = pick(['bright', 'edges', 'both', 'both', 'shadow', 'scatter']);
+    p.colorMode = pick(['auto', 'palette', 'palette', 'white', 'single', 'complement', 'pastel', 'neon']);
+    var palIds = ['classic', 'astral'].concat(GL.styleList().map(function (s) { return s.id; })).concat(['mine']);
+    p.paletteId = pick(palIds);
+    p.singleColor = U.hslToRgb(r() * 360, 1, 0.6);
+    p.styleMix = pick(Object.keys(SPK.STYLE_SETS));
+    p.motion = pick(['twinkle', 'twinkle', 'fade', 'pulse']);
+    p.speed = 1 + ((r() * 4) | 0);
+    p.glow = 0.4 + r() * 0.5;
+    p.density = 0.3 + r() * 0.7;
+    p.jitter = 0.2 + r() * 0.6;
+    p.drift = r() < 0.5 ? 0 : r() * 0.6;
+    p.depthLayers = r() < 0.5;
+    p.trace = r() < 0.45;
+    p.spriteScale = 0.5 + r();
+    p.intensity = 0.6 + r() * 0.4;
+    syncControls(); redetect(); buildGlitterField();
+    setStatus('🎲 CHAOS! ' + state.instances.length + ' sparkles');
+  }
+
   // ------------------------------------------------------------------ wire
   function populateSelect(id, items) {
     var el = $(id); if (!el) return;
@@ -476,6 +658,7 @@
       if (state.mode === 'text') rebuildText();
     });
   }
+
   function setMode(mode) {
     state.mode = mode; applyModeUI();
     if (mode === 'text') {
@@ -490,6 +673,7 @@
       view.width = sz.w; view.height = sz.h;
       document.body.classList.add('has-image');
       buildGlitterField();
+      buildDust();
       setStatus(state.source.kind.toUpperCase() + ' ' + state.source.width + '×' + state.source.height);
     } else {
       state.source = null; document.body.classList.remove('has-image'); setStatus('Open an image or GIF ✨');
@@ -504,6 +688,16 @@
   }
   function updateGlitterVisibility() {
     $('glitterGroup').classList.toggle('hidden', !(state.mode === 'text' || state.params.glitterOnImage));
+    updateColorUI();
+  }
+  // show/hide the conditional controls (palette editor, single colour, dust…)
+  function updateColorUI() {
+    var cm = state.params.colorMode;
+    $('paletteRow').classList.toggle('hidden', cm !== 'palette');
+    $('singleColorRow').classList.toggle('hidden', cm !== 'single');
+    $('imgCustomPalette').classList.toggle('hidden', !(cm === 'palette' && state.params.paletteId === 'mine'));
+    $('textCustomPalette').classList.toggle('hidden', state.params.glitterStyle !== 'custom');
+    $('dustControls').style.opacity = state.params.dust ? '1' : '0.45';
   }
 
   function syncControls() {
@@ -513,14 +707,26 @@
     setVal('colorBoost', p.colorBoost); setVal('speed', p.speed);
     setVal('lengthSec', p.lengthSec); setVal('fps', p.fps);
     setVal('lumaThreshold', p.lumaThreshold); setVal('contrastThreshold', p.contrastThreshold);
+    setVal('spriteScale', p.spriteScale); setVal('drift', p.drift);
+    setVal('lumaWeight', p.lumaWeight); setVal('edgeWeight', p.edgeWeight);
+    setVal('count', p.count); setVal('spacing', p.spacing); setVal('jitter', p.jitter);
+    setVal('dustDensity', p.dustDensity); setVal('dustGrain', p.dustGrain); setVal('dustIntensity', p.dustIntensity);
     $('styleMix').value = p.styleMix; $('colorMode').value = p.colorMode;
+    $('motion').value = p.motion; $('detectMode').value = p.detectMode;
+    setVal('paletteId', p.paletteId); $('singleColor').value = rgbToHex(p.singleColor);
     $('hueCycle').checked = !!p.hueCycle; $('spin').checked = !!p.spinRevs;
+    $('depthLayers').checked = !!p.depthLayers; $('trace').checked = !!p.trace;
+    $('showDetect').checked = !!p.showDetect; $('dustOn').checked = !!p.dust;
     $('presetClassic').classList.toggle('active', p.preset === 'classic');
     $('presetAstral').classList.toggle('active', p.preset === 'astral');
     // glitter
     setVal('glitterStyle', p.glitterStyle); setVal('glitterDensity', p.glitterDensity);
     setVal('glitterIntensity', p.glitterIntensity); setVal('glitterGrain', p.glitterGrain);
     $('glitterFill').checked = !!p.glitterOnImage;
+    // custom palette swatches
+    $('textPalBase').value = textCustomDef.base;
+    document.querySelectorAll('.textPalFlake').forEach(function (el, i) { el.value = textCustomDef.flakes[i] || '#ffffff'; });
+    document.querySelectorAll('.palSwatch').forEach(function (el, i) { el.value = imageCustomHex[i] || '#ffffff'; });
     // text
     setVal('textInput', t.text); setVal('textFont', t.font); setVal('textSize', t.size);
     setVal('textAlign', t.align); setVal('textLeading', t.leading); setVal('textSpacing', t.letterSpacing);
@@ -531,6 +737,7 @@
     $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
     $('textBgColor').disabled = !t.bg;
     updateAllLabels();
+    updateColorUI();
   }
   function setVal(id, v) { var el = $(id); if (el) el.value = v; }
   function updateAllLabels() {
@@ -542,6 +749,7 @@
 
   function applyPreset(name) {
     PRE.apply(state.params, name);
+    state.params.paletteId = name;   // presets pick their own palette
     syncControls();
     redetect();
   }
@@ -555,6 +763,7 @@
       updateAllLabels();
       if (mode === 'redetect') scheduleRedetect();
       else if (mode === 'rebuild') rebuild();
+      else if (mode === 'dust') buildDust();
       // 'render' => nothing, preview loop picks it up
     });
   }
@@ -563,11 +772,21 @@
   function scheduleRedetect() { clearTimeout(_rd); _rd = setTimeout(redetect, 120); }
 
   function init() {
+    applyTextCustom();   // register the "My palette" glitter style (last in the picker)
+
     // file input + drop
     var input = $('fileInput');
     input.addEventListener('change', function () { if (input.files[0]) openFile(input.files[0]); });
     $('openBtn').addEventListener('click', function () { input.click(); });
     $('dropHint').addEventListener('click', function () { input.click(); });
+
+    // hold-to-compare
+    var cmp = $('compareBtn');
+    function cmpOff() { state.compare = false; }
+    cmp.addEventListener('pointerdown', function (ev) { ev.preventDefault(); state.compare = true; });
+    cmp.addEventListener('pointerup', cmpOff);
+    cmp.addEventListener('pointerleave', cmpOff);
+    cmp.addEventListener('pointercancel', cmpOff);
 
     var stage = $('stage');
     ['dragenter', 'dragover'].forEach(function (e) {
@@ -580,9 +799,13 @@
       var f = ev.dataTransfer && ev.dataTransfer.files[0]; if (f) openFile(f);
     });
 
-    // presets
+    // presets + looks + chaos
     $('presetClassic').addEventListener('click', function () { applyPreset('classic'); });
     $('presetAstral').addEventListener('click', function () { applyPreset('astral'); });
+    $('saveLookBtn').addEventListener('click', saveLook);
+    $('savedLooks').addEventListener('change', function () { if (this.value) applyLook(this.value); });
+    $('chaosBtn').addEventListener('click', chaos);
+    refreshLooks();
 
     // mode tabs
     $('tabImage').addEventListener('click', function () { setMode('image'); });
@@ -599,25 +822,67 @@
     // sliders
     bindSlider('intensity', 'intensity', 'render');
     bindSlider('maxSize', 'maxSize', 'render');
+    bindSlider('spriteScale', 'spriteScale', 'render');
     bindSlider('density', 'density', 'redetect');
     bindSlider('glow', 'glow', 'render');
     bindSlider('colorBoost', 'colorBoost', 'rebuild');
     bindSlider('speed', 'speed', 'render');
+    bindSlider('drift', 'drift', 'render');
     bindSlider('lengthSec', 'lengthSec', 'render');
     bindSlider('fps', 'fps', 'render');
     bindSlider('lumaThreshold', 'lumaThreshold', 'redetect');
     bindSlider('contrastThreshold', 'contrastThreshold', 'redetect');
+    bindSlider('lumaWeight', 'lumaWeight', 'redetect');
+    bindSlider('edgeWeight', 'edgeWeight', 'redetect');
+    bindSlider('count', 'count', 'redetect');
+    bindSlider('spacing', 'spacing', 'redetect');
+    bindSlider('jitter', 'jitter', 'redetect');
+    bindSlider('dustDensity', 'dustDensity', 'dust');
+    bindSlider('dustGrain', 'dustGrain', 'dust');
+    bindSlider('dustIntensity', 'dustIntensity', 'dust');
     $('brushSize').addEventListener('input', function () { state.brushSize = parseFloat($('brushSize').value); updateAllLabels(); });
 
     // selects / checkboxes
     $('styleMix').addEventListener('change', function () { state.params.styleMix = $('styleMix').value; rebuild(); });
-    $('colorMode').addEventListener('change', function () { state.params.colorMode = $('colorMode').value; rebuild(); });
+    $('colorMode').addEventListener('change', function () { state.params.colorMode = $('colorMode').value; rebuild(); updateColorUI(); });
+    $('paletteId').addEventListener('change', function () { state.params.paletteId = $('paletteId').value; rebuild(); updateColorUI(); });
+    $('singleColor').addEventListener('input', function () { state.params.singleColor = U.hexToRgb($('singleColor').value); rebuild(); });
+    $('motion').addEventListener('change', function () { state.params.motion = $('motion').value; });
+    $('detectMode').addEventListener('change', function () { state.params.detectMode = $('detectMode').value; redetect(); });
     $('hueCycle').addEventListener('change', function () { state.params.hueCycle = $('hueCycle').checked; });
     $('spin').addEventListener('change', function () { state.params.spinRevs = $('spin').checked ? 1 : 0; });
+    $('depthLayers').addEventListener('change', function () { state.params.depthLayers = $('depthLayers').checked; });
+    $('trace').addEventListener('change', function () { state.params.trace = $('trace').checked; redetect(); });
+    $('showDetect').addEventListener('change', function () { state.params.showDetect = $('showDetect').checked; });
+    $('dustOn').addEventListener('change', function () { state.params.dust = $('dustOn').checked; buildDust(); updateColorUI(); });
+
+    // image custom palette swatches
+    document.querySelectorAll('.palSwatch').forEach(function (el, i) {
+      el.addEventListener('input', function () {
+        imageCustomHex[i] = el.value;
+        saveJSON(IMG_PAL_KEY, imageCustomHex);
+        if (state.params.colorMode === 'palette' && state.params.paletteId === 'mine') rebuild();
+      });
+    });
+    // text custom palette swatches
+    function onTextPal() {
+      textCustomDef.base = $('textPalBase').value;
+      textCustomDef.flakes = [];
+      document.querySelectorAll('.textPalFlake').forEach(function (el) { textCustomDef.flakes.push(el.value); });
+      saveJSON(TXT_PAL_KEY, textCustomDef);
+      applyTextCustom();
+      buildGlitterField();
+    }
+    $('textPalBase').addEventListener('input', onTextPal);
+    document.querySelectorAll('.textPalFlake').forEach(function (el) { el.addEventListener('input', onTextPal); });
 
     // glitter controls (shared by text mode + image glitter-fill)
     populateSelect('glitterStyle', GL.styleList());
-    $('glitterStyle').addEventListener('change', function () { state.params.glitterStyle = $('glitterStyle').value; buildGlitterField(); });
+    populatePaletteSelect();
+    $('glitterStyle').addEventListener('change', function () {
+      state.params.glitterStyle = $('glitterStyle').value;
+      buildGlitterField(); buildDust(); updateColorUI();
+    });
     $('glitterDensity').addEventListener('input', function () { state.params.glitterDensity = parseFloat($('glitterDensity').value); updateAllLabels(); buildGlitterField(); });
     $('glitterIntensity').addEventListener('input', function () { state.params.glitterIntensity = parseFloat($('glitterIntensity').value); updateAllLabels(); });
     $('glitterGrain').addEventListener('input', function () { state.params.glitterGrain = parseFloat($('glitterGrain').value); updateAllLabels(); buildGlitterField(); });
@@ -659,10 +924,12 @@
       });
     });
     $('clearSel').addEventListener('click', function () {
+      pushUndo();
       state.penCenters = []; state.maskActive = false;
       if (state.maskCanvas) state.maskCanvas.getContext('2d').clearRect(0, 0, state.maskCanvas.width, state.maskCanvas.height);
       redetect();
     });
+    $('undoBtn').addEventListener('click', undo);
     $('seedBtn').addEventListener('click', function () {
       state.params.seed = (Math.random() * 1e9) | 0; rebuild();
     });
@@ -695,7 +962,8 @@
     setMode: setMode,
     loadFontFromBuffer: loadFontFromBuffer,
     setText: function (o) { for (var k in o) state.textOpts[k] = o[k]; syncControls(); if (state.mode === 'text') rebuildText(); },
-    setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); },
+    setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); buildDust(); },
+    redetect: redetect,
     renderStillCanvas: function () { return EXP.renderStill(state.source, state.instances, state.params, 640, currentMatte(), renderExtras()); },
     exportGifBytes: function () {
       return EXP.exportGIF(state.source, state.instances, state.params,
