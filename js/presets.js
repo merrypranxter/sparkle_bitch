@@ -44,6 +44,7 @@
       glitterStyle: 'silver',
       glitterDensity: 0.6,
       glitterIntensity: 0.9,
+      glitterGrain: 1,       // flake size multiplier; <1 = much finer glitter
       glitterOnImage: false,
       // export animation
       lengthSec: 2,

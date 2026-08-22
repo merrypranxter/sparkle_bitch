@@ -55,7 +55,40 @@
     galaxy:   { label: 'Galaxy',    base: [16, 10, 38],    flake: 'dot',
                 palette: [[255,0,204],[138,80,235],[80,120,255],[255,255,255],[255,150,220]] },
     candy:    { label: 'Candy',     base: [255, 205, 230], flake: 'dot',
-                palette: [[255,110,180],[130,200,255],[255,240,140],[150,255,200],[255,255,255]] }
+                palette: [[255,110,180],[130,200,255],[255,240,140],[150,255,200],[255,255,255]] },
+    // ---- light-background styles (no white flakes — they'd vanish) ----
+    // `light: true` = draw twinkles non-additively with a soft core, so colour
+    // survives on a near-white base instead of blowing out to white.
+    sugarpaper:{ label: 'Sugar Paper', base: [244, 238, 250], flake: 'dot', light: true,
+                palette: [[235,80,150],[120,140,245],[60,190,140],[245,160,60],[175,110,240],[240,90,110]] },
+    creamsicle:{ label: 'Creamsicle', base: [255, 240, 222], flake: 'dot', light: true,
+                palette: [[245,120,40],[240,80,105],[250,175,70],[225,70,140],[235,150,55]] },
+    blueskies: { label: 'Blue Skies', base: [222, 238, 255], flake: 'dot', light: true,
+                palette: [[35,105,235],[60,170,250],[15,80,200],[100,195,250],[70,135,245]] },
+    rosequartz:{ label: 'Rose Quartz', base: [255, 234, 242], flake: 'dot', light: true,
+                palette: [[225,55,130],[245,105,165],[190,40,105],[250,145,190],[215,75,150]] },
+    // ---- monochrome sets (shades of one hue) ----
+    allpink:  { label: 'All Pink',  base: [120, 14, 64],   flake: 'dot',
+                palette: [[255,60,150],[255,110,180],[255,165,205],[220,30,110],[255,200,225]] },
+    allblue:  { label: 'All Blue',  base: [12, 34, 104],   flake: 'dot',
+                palette: [[70,140,255],[110,190,255],[40,100,235],[160,220,255],[200,240,255]] },
+    allpurple:{ label: 'All Purple', base: [52, 18, 96],   flake: 'dot',
+                palette: [[140,80,255],[180,130,255],[215,180,255],[110,45,215],[240,225,255]] },
+    allgreen: { label: 'All Green', base: [12, 64, 32],    flake: 'dot',
+                palette: [[70,220,120],[130,250,160],[35,175,85],[190,255,205],[95,235,135]] },
+    // ---- new combos ----
+    sherbet:  { label: 'Sherbet',   base: [46, 16, 54],    flake: 'dot',
+                palette: [[255,135,90],[255,95,170],[255,215,90],[170,130,255],[255,170,200]] },
+    toxic:    { label: 'Toxic',     base: [14, 24, 8],     flake: 'dot',
+                palette: [[150,255,0],[0,255,150],[225,255,40],[0,215,120],[190,255,160]] },
+    peach:    { label: 'Peach Melba', base: [255, 228, 212], flake: 'dot', light: true,
+                palette: [[245,95,70],[250,145,95],[245,65,100],[225,75,50],[250,180,125]] },
+    berry:    { label: 'Very Berry', base: [36, 8, 44],    flake: 'dot',
+                palette: [[255,60,140],[175,85,255],[255,145,185],[125,65,225],[255,100,170]] },
+    sunset:   { label: 'Sunset Strip', base: [40, 10, 36], flake: 'dot',
+                palette: [[255,90,60],[255,160,50],[255,70,130],[200,80,220],[255,220,120]] },
+    bubblegum:{ label: 'Bubblegum', base: [255, 218, 238], flake: 'dot', light: true,
+                palette: [[245,60,160],[250,125,190],[225,40,130],[250,165,210],[185,105,235]] }
   };
 
   function styleList() {
@@ -64,13 +97,17 @@
     return out;
   }
 
-  // Build a seeded flake field for a w x h area at a density (0..1).
+  // Build a seeded flake field for a w x h area at a density (0..2).
   // Positions are normalised so the same field renders at any output size.
-  function buildField(w, h, styleId, density, seed) {
+  // grain scales flake size: 1 = classic, down to 0.2 for very fine dust.
+  // density 0..1 behaves exactly as it always has (11px -> 3.6px spacing);
+  // 1..2 packs tighter (down to 1.4px) so fine grain can read as solid glitter.
+  function buildField(w, h, styleId, density, seed, grain) {
     var style = STYLES[styleId] || STYLES.silver;
     var rng = U.mulberry32(U.hashSeed(String(seed) + '|' + styleId));
-    var spacing = U.lerp(11, 3.6, U.clamp(density, 0, 1));
-    var count = Math.min(16000, Math.max(40, Math.round((w * h) / (spacing * spacing))));
+    var d = U.clamp(density, 0, 2);
+    var spacing = d <= 1 ? U.lerp(11, 3.6, d) : U.lerp(3.6, 1.4, d - 1);
+    var count = Math.min(40000, Math.max(40, Math.round((w * h) / (spacing * spacing))));
     var cyc = [2, 3, 4, 5, 6];
     var flakes = new Array(count);
     for (var i = 0; i < count; i++) {
@@ -84,7 +121,7 @@
         duty: 0.28 + rng() * 0.22
       };
     }
-    return { flakes: flakes, styleId: styleId, style: style };
+    return { flakes: flakes, styleId: styleId, style: style, grain: grain || 1 };
   }
 
   // PURE: brightness of a flake at a given loop phase. Triangle pulse inside a
@@ -105,7 +142,9 @@
     opts = opts || {};
     var w = opts.w || ctx.canvas.width, h = opts.h || ctx.canvas.height;
     var style = field.style;
-    var scale = Math.max(0.75, Math.min(w, h) / 300); // flake size scales with output
+    // flake size scales with output, then by the user's grain multiplier
+    // (grain < 1 => much finer glitter than the classic default)
+    var scale = Math.max(0.75, Math.min(w, h) / 300) * (field.grain || 1);
     var hueShift = style.hueCycle ? A.hueCycle(phase01, 1) : 0;
     var flakes = field.flakes;
     var useSprite = style.flake === 'star' || style.flake === 'heart';
@@ -137,7 +176,10 @@
     }
 
     // Pass B — twinkling bright highlights on the flakes lit this frame.
-    ctx.globalCompositeOperation = 'lighter';
+    // Light-based styles draw non-additively with a soft core: additive white
+    // on a near-white base just blows every flake out to invisible white.
+    var lightBg = !!style.light && !overlay;
+    ctx.globalCompositeOperation = lightBg ? 'source-over' : 'lighter';
     for (i = 0; i < flakes.length; i++) {
       f = flakes[i];
       var st = opts.still
@@ -155,7 +197,9 @@
       } else {
         ctx.fillStyle = U.rgbToCss(color, 1);
         ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
-        ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + 0.5 * st.bright).toFixed(2) + ')';
+        ctx.fillStyle = lightBg
+          ? 'rgba(255,255,255,' + (0.4 * st.bright).toFixed(2) + ')'
+          : 'rgba(255,255,255,' + (0.5 + 0.5 * st.bright).toFixed(2) + ')';
         var c = sz * 0.5;
         ctx.fillRect(x - c / 2, y - c / 2, c, c);
       }

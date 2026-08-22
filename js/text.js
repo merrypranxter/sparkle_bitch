@@ -58,7 +58,7 @@
     ['Handwriting', [
       ['marker', 'Marker', "'Permanent Marker', cursive"],
       ['rocksalt', 'Rock Salt', "'Rock Salt', cursive"],
-      ['shadows', 'Shadows', "'Shadows Into Light', cursive"],
+      ['shadows', 'Shadows Into Light', "'Shadows Into Light', cursive"],
       ['comicneue', 'Comic Neue', "'Comic Neue', 'Comic Sans MS', cursive"]
     ]]
   ];
@@ -116,6 +116,14 @@
 
   function newCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
+  // Canvas letterSpacing is Chromium 99+ / Safari 17+; everywhere else we draw
+  // glyph-by-glyph ourselves so tracking works on any browser.
+  var _lsNative = null;
+  function letterSpacingNative() {
+    if (_lsNative == null) { try { _lsNative = 'letterSpacing' in newCanvas(4, 4).getContext('2d'); } catch (e) { _lsNative = false; } }
+    return _lsNative;
+  }
+
   function tintCanvas(src, color, W, H) {
     var t = newCanvas(W, H), tc = t.getContext('2d');
     tc.drawImage(src, 0, 0);
@@ -140,8 +148,11 @@
   function renderText(o) {
     o = o || {};
     var text = o.text != null && String(o.text).length ? String(o.text) : 'sparkle bitch';
+    if (o.caps) text = text.toUpperCase();           // ALL CAPS toggle (render-only)
     var size = o.size || 72;
     var lines = text.split('\n');
+    var spacing = o.letterSpacing || 0;              // px between letters (can be negative)
+    var nativeLS = letterSpacingNative();
     var leading = o.leading || 1.32;                 // line-spacing multiplier
     // clamp the type size so even pathological input (many long lines) can't
     // request a canvas beyond browser limits (~32k px) and blank the output.
@@ -158,24 +169,45 @@
 
     var meas = newCanvas(8, 8).getContext('2d');
     meas.font = fontString(o);
-    if ('letterSpacing' in meas) meas.letterSpacing = (o.letterSpacing || 0) + 'px';
+    if (nativeLS) meas.letterSpacing = spacing + 'px';
+    // line width: native tracking is included by measureText; in fallback mode
+    // we add the per-gap spacing ourselves (no trailing gap after the last glyph)
+    function lineWidth(ctx, line) {
+      var w = ctx.measureText(line || ' ').width;
+      if (spacing && !nativeLS) w += spacing * Math.max(0, (line || '').length - 1);
+      return w;
+    }
     var maxW = 1;
-    for (var i = 0; i < lines.length; i++) maxW = Math.max(maxW, Math.ceil(meas.measureText(lines[i] || ' ').width));
+    for (var i = 0; i < lines.length; i++) maxW = Math.max(maxW, Math.ceil(lineWidth(meas, lines[i])));
     var W = Math.min(maxW + pad * 2, 8000);
     var H = Math.min(lineH * lines.length + pad * 2, 8000);
     var alignX = align === 'left' ? pad : align === 'right' ? (W - pad) : (W / 2);
 
     function setup(ctx) {
       ctx.font = fontString(o);
-      if ('letterSpacing' in ctx) ctx.letterSpacing = (o.letterSpacing || 0) + 'px';
+      if (nativeLS) ctx.letterSpacing = spacing + 'px';
       ctx.textAlign = align; ctx.textBaseline = 'middle';
+    }
+    // draw one line honouring letter spacing: natively when the browser can,
+    // glyph-by-glyph (code-point safe) otherwise
+    function drawLine(ctx, line, x, y, stroke) {
+      if (!spacing || nativeLS) { if (stroke) ctx.strokeText(line, x, y); else ctx.fillText(line, x, y); return; }
+      var total = lineWidth(ctx, line);
+      var pen = align === 'left' ? x : align === 'right' ? x - total : x - total / 2;
+      ctx.textAlign = 'left';
+      var chars = Array.from(line);
+      for (var ci = 0; ci < chars.length; ci++) {
+        if (stroke) ctx.strokeText(chars[ci], pen, y); else ctx.fillText(chars[ci], pen, y);
+        pen += ctx.measureText(chars[ci]).width + spacing;
+      }
+      ctx.textAlign = align;
     }
     function eachLine(ctx, fn) { for (var j = 0; j < lines.length; j++) fn(lines[j], alignX, pad + lineH * (j + 0.5)); }
 
     // fill letterforms
     var maskCanvas = newCanvas(W, H);
     var m = maskCanvas.getContext('2d'); setup(m); m.fillStyle = '#fff';
-    eachLine(m, function (line, x, y) { m.fillText(line, x, y); });
+    eachLine(m, function (line, x, y) { drawLine(m, line, x, y, false); });
 
     // one mask per outline layer: the letter expanded by the cumulative radius.
     // Rendered outermost-first, inner layers overdraw the middle -> nested bands.
@@ -185,8 +217,8 @@
       var lm = newCanvas(W, H), lc = lm.getContext('2d'); setup(lc);
       lc.fillStyle = '#fff'; lc.strokeStyle = '#fff';
       lc.lineWidth = cum * 2; lc.lineJoin = 'round'; lc.miterLimit = 2;
-      eachLine(lc, function (line, x, y) { lc.strokeText(line, x, y); });
-      eachLine(lc, function (line, x, y) { lc.fillText(line, x, y); });
+      eachLine(lc, function (line, x, y) { drawLine(lc, line, x, y, true); });
+      eachLine(lc, function (line, x, y) { drawLine(lc, line, x, y, false); });
       layers.push({ mask: lm, kind: outlines[k].kind, color: outlines[k].color, glitter: outlines[k].glitter });
     }
 
