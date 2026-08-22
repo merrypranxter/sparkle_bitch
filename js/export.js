@@ -16,8 +16,17 @@
   function nextTick() { return new Promise(function (r) { setTimeout(r, 0); }); }
   function seekVideo(v, t) {
     return new Promise(function (res) {
-      var done = function () { v.removeEventListener('seeked', done); res(); };
-      v.addEventListener('seeked', done); v.currentTime = t;
+      // already there (within a frame) -> no 'seeked' event will fire
+      if (Math.abs(v.currentTime - t) < 0.04) return res();
+      var settled = false;
+      var done = function () {
+        if (settled) return; settled = true;
+        clearTimeout(to); v.removeEventListener('seeked', done); res();
+      };
+      // never let a lost seek event wedge the export (busy flag would stick on)
+      var to = setTimeout(done, 1200);
+      v.addEventListener('seeked', done);
+      try { v.currentTime = t; } catch (e) { done(); }
     });
   }
   // Merge the caller's per-frame render options (text, glitter…) with matte/still.

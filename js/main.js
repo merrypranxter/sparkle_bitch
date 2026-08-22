@@ -22,7 +22,7 @@
     glitterField: null,
     textOpts: {
       text: 'sparkle bitch', font: 'arialblack', size: 96, bold: true, italic: false,
-      align: 'center', leading: 1.3,
+      align: 'center', leading: 1.3, letterSpacing: 0, caps: false,
       // layered outlines, innermost first; each is a solid colour OR a glitter style
       outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }],
       shadow: true, bg: null // null = transparent
@@ -93,7 +93,7 @@
   }
   function buildGlitterField() {
     var d = refDims();
-    state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed);
+    state.glitterField = GL.buildField(d.w, d.h, state.params.glitterStyle, state.params.glitterDensity, state.params.seed, state.params.glitterGrain);
   }
   function buildTextNow() {
     state.textSource = MED.makeTextSource(state.textOpts);
@@ -367,8 +367,11 @@
     cb();
   }
 
+  var _lastResultURL = null;
   function showResult(kind, url, filename) {
     var box = $('result'); box.innerHTML = '';
+    if (_lastResultURL) { try { URL.revokeObjectURL(_lastResultURL); } catch (e) {} }
+    _lastResultURL = url;
     var el;
     if (kind === 'video') { el = document.createElement('video'); el.src = url; el.controls = true; el.autoplay = true; el.loop = true; el.muted = true; }
     else { el = document.createElement('img'); el.src = url; }
@@ -377,18 +380,39 @@
     a.href = url; a.download = filename; a.className = 'result-save'; a.textContent = '⬇ Save ' + filename;
     box.appendChild(el); box.appendChild(a);
     box.classList.remove('hidden');
+    // make the result impossible to miss: scroll to it + pulse. When a browser
+    // silently blocks the automatic download (multi-download protection kicks
+    // in after the first one), this Save button — a real user click — always
+    // works, so a page refresh is never needed to export again.
+    box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+    try { box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { box.scrollIntoView(); }
+  }
+
+  // Run an export job with a busy flag that CANNOT wedge: any throw or
+  // rejection releases it, so one bad export never disables the buttons.
+  function runExport(label, job) {
+    state.busy = true; setStatus(label + '…');
+    var done = function () { state.busy = false; };
+    try {
+      job().then(done, function (e) { done(); setProgress(null); setStatus('⚠ ' + (e && e.message || e)); });
+    } catch (e) {
+      done(); setProgress(null); setStatus('⚠ ' + (e && e.message || e));
+    }
   }
 
   function doPNG() {
     if (busyGuard()) return;
     ensureExportFont(function () {
-      state.busy = true; setStatus('Rendering PNG…');
-      EXP.exportPNG(state.source, state.instances, state.params,
-        { maxLong: 2000, matte: currentMatte(), render: renderExtras() }).then(function (blob) {
-        var name = 'sparklebitch.png';
-        EXP.download(blob, name);
-        showResult('image', URL.createObjectURL(blob), name);
-        state.busy = false; setStatus('Saved PNG ✨');
+      setProgress(null);
+      runExport('Rendering PNG', function () {
+        return EXP.exportPNG(state.source, state.instances, state.params,
+          { maxLong: 2000, matte: currentMatte(), render: renderExtras() }).then(function (blob) {
+          if (!blob) throw new Error('PNG encode failed');
+          var name = 'sparklebitch.png';
+          EXP.download(blob, name);
+          showResult('image', URL.createObjectURL(blob), name);
+          setStatus('Saved PNG ✨ — no download? Use the ⬇ Save button under the preview.');
+        });
       });
     });
   }
@@ -396,21 +420,23 @@
   function doGIF() {
     if (busyGuard()) return;
     ensureExportFont(function () {
-      state.busy = true; setStatus('Making GIF…'); setProgress(0);
+      setProgress(0);
       var opts = {
         maxLong: state.mode === 'text' ? 640 : 480, matte: currentMatte(),
         render: renderExtras(), transparent: textTransparent(),
         lengthSec: state.params.lengthSec, fps: state.params.fps
       };
-      EXP.exportGIF(state.source, state.instances, state.params, opts, function (frac, label) {
-        setProgress(frac); setStatus('Making GIF… ' + label);
-      }).then(function (bytes) {
-        setProgress(null);
-        var name = 'sparklebitch.gif';
-        var blob = EXP.download(bytes, name, 'image/gif');
-        showResult('image', URL.createObjectURL(blob), name);
-        state.busy = false; setStatus('Saved GIF ✨ (' + (bytes.length / 1024 | 0) + ' KB)');
-      }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+      runExport('Making GIF', function () {
+        return EXP.exportGIF(state.source, state.instances, state.params, opts, function (frac, label) {
+          setProgress(frac); setStatus('Making GIF… ' + label);
+        }).then(function (bytes) {
+          setProgress(null);
+          var name = 'sparklebitch.gif';
+          var blob = EXP.download(bytes, name, 'image/gif');
+          showResult('image', URL.createObjectURL(blob), name);
+          setStatus('Saved GIF ✨ (' + (bytes.length / 1024 | 0) + ' KB) — no download? Use the ⬇ Save button under the preview.');
+        });
+      });
     });
   }
 
@@ -418,17 +444,19 @@
     if (busyGuard()) return;
     if (!EXP.videoSupported()) { setStatus('⚠ Video export not supported in this browser — try GIF.'); return; }
     ensureExportFont(function () {
-      state.busy = true; setStatus('Recording video…'); setProgress(0);
+      setProgress(0);
       var opts = { maxLong: 720, matte: currentMatte() || MATTE, render: renderExtras(), lengthSec: state.params.lengthSec, fps: Math.max(12, state.params.fps) };
-      EXP.exportVideo(state.source, state.instances, state.params, opts, function (frac) { setProgress(frac); })
-        .then(function (out) {
-          setProgress(null);
-          var ext = out.mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
-          var name = 'sparklebitch.' + ext;
-          EXP.download(out.blob, name);
-          showResult('video', URL.createObjectURL(out.blob), name);
-          state.busy = false; setStatus('Saved ' + ext.toUpperCase() + ' ✨');
-        }).catch(function (e) { setProgress(null); state.busy = false; setStatus('⚠ ' + e.message); });
+      runExport('Recording video', function () {
+        return EXP.exportVideo(state.source, state.instances, state.params, opts, function (frac) { setProgress(frac); })
+          .then(function (out) {
+            setProgress(null);
+            var ext = out.mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+            var name = 'sparklebitch.' + ext;
+            EXP.download(out.blob, name);
+            showResult('video', URL.createObjectURL(out.blob), name);
+            setStatus('Saved ' + ext.toUpperCase() + ' ✨ — no download? Use the ⬇ Save button under the preview.');
+          });
+      });
     });
   }
 
@@ -491,11 +519,13 @@
     $('presetAstral').classList.toggle('active', p.preset === 'astral');
     // glitter
     setVal('glitterStyle', p.glitterStyle); setVal('glitterDensity', p.glitterDensity);
-    setVal('glitterIntensity', p.glitterIntensity); $('glitterFill').checked = !!p.glitterOnImage;
+    setVal('glitterIntensity', p.glitterIntensity); setVal('glitterGrain', p.glitterGrain);
+    $('glitterFill').checked = !!p.glitterOnImage;
     // text
     setVal('textInput', t.text); setVal('textFont', t.font); setVal('textSize', t.size);
-    setVal('textAlign', t.align); setVal('textLeading', t.leading);
+    setVal('textAlign', t.align); setVal('textLeading', t.leading); setVal('textSpacing', t.letterSpacing);
     $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
+    $('textCaps').checked = !!t.caps;
     renderOutlineList();
     $('textShadow').checked = !!t.shadow;
     $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
@@ -590,6 +620,7 @@
     $('glitterStyle').addEventListener('change', function () { state.params.glitterStyle = $('glitterStyle').value; buildGlitterField(); });
     $('glitterDensity').addEventListener('input', function () { state.params.glitterDensity = parseFloat($('glitterDensity').value); updateAllLabels(); buildGlitterField(); });
     $('glitterIntensity').addEventListener('input', function () { state.params.glitterIntensity = parseFloat($('glitterIntensity').value); updateAllLabels(); });
+    $('glitterGrain').addEventListener('input', function () { state.params.glitterGrain = parseFloat($('glitterGrain').value); updateAllLabels(); buildGlitterField(); });
     $('glitterFill').addEventListener('change', function () {
       state.params.glitterOnImage = $('glitterFill').checked;
       updateGlitterVisibility(); if (state.params.glitterOnImage) buildGlitterField();
@@ -606,6 +637,7 @@
     bindText('textInput', 'text'); bindText('textFont', 'font', 'change');
     bindText('textSize', 'size'); bindText('textBold', 'bold', 'change');
     bindText('textItalic', 'italic', 'change'); bindText('textShadow', 'shadow', 'change');
+    bindText('textCaps', 'caps', 'change'); bindText('textSpacing', 'letterSpacing');
     bindText('textAlign', 'align', 'change'); bindText('textLeading', 'leading');
     renderOutlineList();
     $('addOutlineBtn').addEventListener('click', addOutline);
