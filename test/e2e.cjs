@@ -781,6 +781,64 @@ async function poll(page, fn, timeout, label) {
     ok(lim2.customAfter, 'liminal: manual tweak returns to a custom stack');
     ok(lim2.gifFrames > 1, 'liminal: expanded stack still exports GIF (' + lim2.gifFrames + ' frames)');
 
+    // ---- LIMINAL GEOMETRY + TIME: warps and weather ----
+    const lim3 = await page.evaluate(async () => {
+      var SBM = window.SparkleBitch, out = {};
+      function meanLuma(cv) {
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, m = 0, n = 0;
+        for (var i = 0; i < d.length; i += 4) { m += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++; }
+        return m / n;
+      }
+      function frameLuma(f) {
+        var d = f.data, m = 0, n = 0;
+        for (var i = 0; i < d.length; i += 4) { m += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++; }
+        return m / n;
+      }
+      function meanDiff(a, b) {
+        var da = a.getContext('2d').getImageData(0, 0, a.width, a.height).data;
+        var db = b.getContext('2d').getImageData(0, 0, b.width, b.height).data;
+        var m = 0, n = 0;
+        for (var i = 0; i < da.length; i += 4) {
+          m += Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2]); n += 3;
+        }
+        return m / n;
+      }
+      SBM.applyLiminalPreset('');                            // all effects off
+      var base = SBM.renderStillCanvas();
+      // Vertigo Relay: wells + astigmatism + contours rearrange the still
+      SBM.applyLiminalPreset('vertigo');
+      out.presetV = SBM.state.liminal.preset === 'vertigo' &&
+        SBM.state.liminal.shear.enabled && SBM.state.liminal.gravityWells.enabled &&
+        SBM.state.liminal.astigmatism.enabled && SBM.state.liminal.contours.enabled;
+      out.diffV = meanDiff(base, SBM.renderStillCanvas());
+      // Terminal Twilight: ghosts + shadows + vignette shift the frame
+      SBM.applyLiminalPreset('twilight');
+      out.presetT = SBM.state.liminal.preset === 'twilight' &&
+        SBM.state.liminal.dayNight.enabled && SBM.state.liminal.brownout.enabled &&
+        SBM.state.liminal.shadowDrift.enabled && SBM.state.liminal.ghostTrails.enabled;
+      out.diffT = meanDiff(base, SBM.renderStillCanvas());
+      // day-night cycle: the mid-loop GIF frame is far darker than frame 0
+      var u8 = new Uint8Array(await SBM.exportGifBytes());
+      var gif = SB.decodeGIF(u8);
+      out.gifFrames = gif.frames.length;
+      out.f0 = frameLuma(gif.frames[0]);
+      out.fMid = frameLuma(gif.frames[Math.floor(gif.frames.length / 2)]);
+      out.chips = document.querySelectorAll('#limPresets .chip').length;
+      // back to a custom stack so the persistence asserts below stay valid
+      SBM.applyLiminalPreset('');
+      SBM.setLiminal('scanlines.enabled', true);
+      out.customAfter = SBM.state.liminal.preset === '' && SBM.state.liminal.scanlines.enabled === true;
+      return out;
+    });
+    ok(lim3.presetV, 'liminal: Vertigo Relay chip applies its stack');
+    ok(lim3.diffV > 6, 'liminal: vertigo visibly warps the still (mean diff ' + lim3.diffV.toFixed(1) + ')');
+    ok(lim3.presetT, 'liminal: Terminal Twilight chip applies its stack');
+    ok(lim3.diffT > 6, 'liminal: twilight visibly reweathers the still (mean diff ' + lim3.diffT.toFixed(1) + ')');
+    ok(lim3.f0 - lim3.fMid > 10, 'liminal: day-night GIF dims mid-loop (' + lim3.f0.toFixed(1) + ' -> ' + lim3.fMid.toFixed(1) + ')');
+    ok(lim3.chips >= 10, 'liminal: all vibe chips rendered (' + lim3.chips + ')');
+    ok(lim3.customAfter, 'liminal: reset returns to a custom stack');
+    ok(lim3.gifFrames > 1, 'liminal: geometry+time stack exports GIF (' + lim3.gifFrames + ' frames)');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
