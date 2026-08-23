@@ -837,7 +837,7 @@
     x.globalAlpha = 1; x.clearRect(0, 0, w, h);
     x.drawImage(ctx.canvas, 0, 0);
     for (var y = 0; y < h; y += 2) {
-      var dx = amp * Math.sin((y / h) * 6.2832 * waves);
+      var dx = amp * Math.sin((y / h) * 2 * Math.PI * waves);
       if (Math.abs(dx) >= 0.15) ctx.drawImage(c, 0, y, w, 2, dx, y, w, 2);
     }
   }
@@ -857,7 +857,9 @@
     ctx.save();
     ctx.clearRect(0, 0, w, h);
     for (var i = 0; i < N; i++) {
+      var t = (i / (N - 1) - 0.5) * 2; // -1..1
       ctx.globalAlpha = 1 / (i + 1); // decaying-alpha smear (not an equal-weight average)
+      ctx.drawImage(c, t * dxA, t * dyA);
     }
     ctx.restore();
   }
