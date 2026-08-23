@@ -2,7 +2,10 @@
  * The Liminal Engine: a second render path that degrades reality instead of
  * decorating it. CRT scanlines, drifting DVD moiré, film grain, chromatic
  * aberration, sodium-vapor grades, diffusion bloom, starbursts on real light
- * sources, anamorphic streaks, vignette, rounded frame, breathing zoom.
+ * sources, anamorphic streaks, vignette, rounded frame, breathing zoom —
+ * plus mirror-lens ring bokeh, chromatic auras, ISO push grain, dying-CCD
+ * stuck pixels, rolling shutter, halftone, CMYK slip, photocopy drag,
+ * office fax, and a photo lab of cross-processing chemistry.
  *
  * Same rules as the sparkle side: every animated quantity is a pure function
  * of phase01 with integer cycles, so exported GIFs never snap at the seam.
@@ -31,7 +34,17 @@
       roundedFrame: { enabled: false, radius: 40 },
       prismatic: { enabled: false, strength: 0.3 },
       diffusion: { enabled: false, amount: 0.3, radius: 12 },
-      colorGrade: { enabled: false, liftBlack: 0, sodium: 0, prismShift: false }
+      colorGrade: { enabled: false, liftBlack: 0, sodium: 0, prismShift: false },
+      ringBokeh: { enabled: false, size: 1.0, intensity: 0.8 },
+      chromaAura: { enabled: false, radius: 1.0, intensity: 0.7 },
+      isoGrain: { enabled: false, amount: 0.5 },
+      stuckPixels: { enabled: false, count: 24, columns: true },
+      rollingShutter: { enabled: false, amount: 0.4 },
+      halftone: { enabled: false, cell: 6, amount: 0.8 },
+      cmyk: { enabled: false, amount: 2 },
+      photocopy: { enabled: false, bands: 3, amount: 0.5 },
+      fax: { enabled: false, threshold: 140, dropouts: 0.3 },
+      photoLab: { enabled: false, recipe: 'bleach', amount: 0.7 }
     };
   }
 
@@ -99,6 +112,25 @@
       colorGrade: { enabled: true, liftBlack: 0.22, sodium: 0.2, prismShift: false },
       roundedFrame: { enabled: true, radius: 18 },
       diffusion: { enabled: true, amount: 0.18, radius: 8 }
+    },
+    'fax2003': {
+      label: '📠 Office Fax 2003',
+      fax: { enabled: true, threshold: 130, dropouts: 0.22 },
+      halftone: { enabled: true, cell: 6, amount: 0.35 },
+      grain: { enabled: true, amount: 0.08, animated: true },
+      scanlines: { enabled: true, density: 0.25, rgbOffset: false },
+      vignette: { enabled: true, strength: 0.35, color: '#0a0a0a' }
+    },
+    'mirrorlens': {
+      label: '🔭 Mirror-Lens Motel',
+      ringBokeh: { enabled: true, size: 1.15, intensity: 0.9 },
+      chromaAura: { enabled: true, radius: 1.1, intensity: 0.8 },
+      isoGrain: { enabled: true, amount: 0.55 },
+      stuckPixels: { enabled: true, count: 26, columns: true },
+      rollingShutter: { enabled: true, amount: 0.3 },
+      diffusion: { enabled: true, amount: 0.25, radius: 12 },
+      colorGrade: { enabled: true, liftBlack: 0.06, sodium: 0.3, prismShift: false },
+      breathingZoom: { enabled: true, amount: 0.6 }
     }
   };
 
@@ -204,6 +236,166 @@
       }
     }
     return spots;
+  }
+
+  // Tiny deterministic PRNG factory (same LCG family as the grain tile).
+  function lcg(seed) {
+    var s = ((seed || 1) * 16807) % 2147483647;
+    if (s <= 0) s += 2147483646;
+    return function () { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  }
+
+  // ISO push grain: chunky 3px noise that lives in the shadows — highlights
+  // stay clean, like a sensor screaming at 12800. Colour blotches in mids.
+  function isoGrain(imgData, amount, phase01, seed) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var step = Math.round(phase01 * 8); // 8 discrete noise fields per loop
+    var rnd = lcg((seed || 1) + step * 7919);
+    var BS = 3;
+    var nbx = Math.ceil(w / BS), nby = Math.ceil(h / BS);
+    var blocks = new Float32Array(nbx * nby);
+    for (var i = 0; i < blocks.length; i++) blocks[i] = rnd() - 0.5;
+    var cb4x = Math.ceil(nbx / 4);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var p = (y * w + x) * 4;
+        var l = (d[p] + d[p + 1] + d[p + 2]) / 765;
+        var n = blocks[((y / BS) | 0) * nbx + ((x / BS) | 0)] * amount * 90 * Math.pow(1 - l, 1.6);
+        var bl = blocks[(((y / (BS * 4)) | 0) * cb4x + ((x / (BS * 4)) | 0)) % blocks.length] * amount * 22 * (1 - Math.abs(l - 0.5) * 2);
+        d[p] = clamp(d[p] + n + bl, 0, 255);
+        d[p + 1] = clamp(d[p + 1] + n, 0, 255);
+        d[p + 2] = clamp(d[p + 2] + n - bl, 0, 255);
+      }
+    }
+    return imgData;
+  }
+
+  // Stuck pixels + fixed-pattern column noise: the CCD is dying.
+  // Hot pixels blink with integer-cycle loopSin, so GIFs close cleanly.
+  function stuckPixels(imgData, count, columns, phase01, seed) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var rnd = lcg(seed || 1);
+    var i, p, x, y;
+    if (columns) {
+      for (x = 0; x < w; x++) {
+        var off = (rnd() - 0.5) * 6;
+        for (y = 0; y < h; y++) {
+          p = (y * w + x) * 4;
+          d[p] = clamp(d[p] + off, 0, 255);
+          d[p + 1] = clamp(d[p + 1] + off, 0, 255);
+          d[p + 2] = clamp(d[p + 2] + off, 0, 255);
+        }
+      }
+    }
+    for (i = 0; i < count; i++) {
+      var hx = (rnd() * w) | 0, hy = (rnd() * h) | 0;
+      var warm = rnd() < 0.5;
+      var blink = 0.5 + 0.5 * A.loopSin(phase01, 1, rnd() * 6.2832, 1 + ((rnd() * 3) | 0));
+      if (blink < 0.5) continue;
+      p = (hy * w + hx) * 4;
+      if (warm) { d[p] = 255; d[p + 1] = clamp(d[p + 1] + 60, 0, 255); d[p + 2] = clamp(d[p + 2] - 40, 0, 255); }
+      else { d[p] = clamp(d[p] + 40, 0, 255); d[p + 1] = clamp(d[p + 1] + 120, 0, 255); d[p + 2] = 255; }
+    }
+    return imgData;
+  }
+
+  // Halftone screen: luminance becomes ink-dot coverage on a drifting grid.
+  // The grid drifts exactly one cell per loop -> seamless wrap.
+  function halftone(imgData, cell, amount, phase01) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    cell = Math.max(3, cell | 0);
+    var half = cell / 2, R2 = half * half;
+    var drift = (phase01 * cell) % cell;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var p = (y * w + x) * 4;
+        var l = (d[p] * 3 + d[p + 1] * 4 + d[p + 2]) / 2040;
+        var ink = 1 - l; // dark = more ink
+        var dx = ((x + drift) % cell) - half, dy = ((y + drift) % cell) - half;
+        var f = (dx * dx + dy * dy < ink * R2) ? 1 - 0.72 * amount : 1 + 0.28 * amount;
+        d[p] = clamp(d[p] * f, 0, 255);
+        d[p + 1] = clamp(d[p + 1] * f, 0, 255);
+        d[p + 2] = clamp(d[p + 2] * f, 0, 255);
+      }
+    }
+    return imgData;
+  }
+
+  // CMYK misregistration: each ink plate slipped in its own direction.
+  function cmykMisreg(imgData, amount) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var out = newImageData(w, h), o = out.data;
+    var a = Math.max(0, amount);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var i = (y * w + x) * 4;
+        var rx = clamp(Math.round(x - a), 0, w - 1), ry = clamp(Math.round(y + a / 2), 0, h - 1);
+        var gx = clamp(Math.round(x + a), 0, w - 1), gy = clamp(Math.round(y - a / 2), 0, h - 1);
+        var by = clamp(Math.round(y + a), 0, h - 1);
+        o[i] = d[(ry * w + rx) * 4];
+        o[i + 1] = d[(gy * w + gx) * 4 + 1];
+        o[i + 2] = d[(by * w + x) * 4 + 2];
+        o[i + 3] = d[i + 3];
+      }
+    }
+    return out;
+  }
+
+  // Office fax, 2003: hard bilevel threshold with jitter, white dropout rows,
+  // and the occasional inverted row. Dropout pattern re-seeds 4x per loop.
+  function faxMode(imgData, threshold, dropouts, phase01, seed) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var rnd = lcg((seed || 1) + Math.round(phase01 * 4) * 131);
+    for (var y = 0; y < h; y++) {
+      var rowRnd = rnd(), mode = 0; // 0 normal, 1 white dropout, 2 inverted
+      if (rowRnd < dropouts * 0.7) mode = 1;
+      else if (rowRnd < dropouts) mode = 2;
+      for (var x = 0; x < w; x++) {
+        var p = (y * w + x) * 4;
+        var l = (d[p] + d[p + 1] + d[p + 2]) / 3 + (rnd() - 0.5) * 36;
+        var v = l > threshold ? 245 : 25;
+        if (mode === 1) v = 245;
+        else if (mode === 2) v = 255 - v;
+        d[p] = d[p + 1] = d[p + 2] = v;
+      }
+    }
+    return imgData;
+  }
+
+  // Photo lab chemistry: bleach bypass, cross-processing (warm/cold/toxic),
+  // solarize (threshold pings mid-loop and closes), LOMO pop.
+  function photoLab(imgData, recipe, amount, phase01) {
+    var d = imgData.data, k = clamp(amount, 0, 1);
+    var solT = (0.35 + 0.3 * A.loopPing(phase01, 1)) * 255;
+    for (var i = 0; i < d.length; i += 4) {
+      var r = d[i], g = d[i + 1], b = d[i + 2];
+      var l = (r + g + b) / 3, nr = r, ng = g, nb = b;
+      if (recipe === 'bleach') {
+        nr = l + (r - l) * 0.35; ng = l + (g - l) * 0.35; nb = l + (b - l) * 0.35;
+        nr = (nr - 128) * 1.45 + 132; ng = (ng - 128) * 1.45 + 132; nb = (nb - 128) * 1.45 + 136;
+      } else if (recipe === 'crossWarm') {
+        if (l < 85) { nb += 26; nr -= 12; }
+        else if (l > 170) { nr += 22; ng += 14; nb -= 22; }
+        else { nr += 10; ng -= 4; }
+      } else if (recipe === 'crossCold') {
+        if (l < 85) { nb += 20; ng += 10; nr -= 14; }
+        else if (l > 170) { nb += 12; nr -= 8; ng += 2; }
+        else { ng += 8; nb += 6; }
+      } else if (recipe === 'crossToxic') {
+        if (l < 85) { ng += 22; nr -= 10; nb -= 10; }
+        else if (l > 170) { nr += 16; nb += 20; ng -= 16; }
+        else { ng += 14; nb -= 6; }
+      } else if (recipe === 'solarize') {
+        if (l > solT) { nr = 255 - r; ng = 255 - g; nb = 255 - b; }
+      } else if (recipe === 'lomo') {
+        nr = l + (r - l) * 1.65; ng = l + (g - l) * 1.65; nb = l + (b - l) * 1.65;
+        nr = (nr - 128) * 1.18 + 132; ng = (ng - 128) * 1.18 + 130; nb = (nb - 128) * 1.18 + 124;
+      }
+      d[i] = clamp(r + (nr - r) * k, 0, 255);
+      d[i + 1] = clamp(g + (ng - g) * k, 0, 255);
+      d[i + 2] = clamp(b + (nb - b) * k, 0, 255);
+    }
+    return imgData;
   }
 
   // ---------------------------------------------------------- canvas overlays
@@ -405,6 +597,109 @@
     ctx.drawImage(c, 0, 0);
   }
 
+  // Ring bokeh: mirror-lens doughnuts around the real light sources.
+  var _ringSprite = null;
+  function ringSprite() {
+    if (_ringSprite) return _ringSprite;
+    var S = 128, c = createCanvas(S, S), x = c.getContext('2d');
+    var g = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, 'rgba(255,255,240,0)');
+    g.addColorStop(0.62, 'rgba(255,255,240,0)');
+    g.addColorStop(0.78, 'rgba(255,255,240,0.9)');
+    g.addColorStop(0.9, 'rgba(255,255,240,0.25)');
+    g.addColorStop(1, 'rgba(255,255,240,0)');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    _ringSprite = c; return c;
+  }
+  function ringBokeh(ctx, w, h, imgData, params, phase01, still) {
+    var spots = findBrightSpots(imgData, 190, 34);
+    var sp = ringSprite();
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (var k = 0; k < spots.length; k++) {
+      var s = spots[k];
+      var breathe = still ? 1 : 1 + 0.08 * A.loopSin(phase01, 1, (s.x * 1.1 + s.y * 0.6) % 6.2832, 1);
+      var r = (14 + (s.brightness / 255) * 30) * params.size * breathe;
+      ctx.globalAlpha = clamp(params.intensity * (s.brightness / 255), 0, 1) * 0.85;
+      ctx.drawImage(sp, s.x - r, s.y - r, r * 2, r * 2);
+    }
+    ctx.restore();
+  }
+
+  // Chromatic aura bloom: white core, scene-tinted mid, complementary fringe.
+  function dominantColor(imgData) {
+    var d = imgData.data, r = 0, g = 0, b = 0, n = 0;
+    for (var i = 0; i + 2 < d.length; i += 148) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    n = n || 1;
+    return [(r / n) | 0, (g / n) | 0, (b / n) | 0];
+  }
+  function chromaAura(ctx, w, h, imgData, params, phase01, still) {
+    var spots = findBrightSpots(imgData, 185, 40);
+    if (!spots.length) return;
+    var dom = dominantColor(imgData);
+    var comp = [255 - dom[0], 255 - dom[1], 255 - dom[2]];
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (var k = 0; k < spots.length; k++) {
+      var s = spots[k];
+      var breathe = still ? 1 : 1 + 0.1 * A.loopSin(phase01, 1, (s.x * 0.9 + s.y * 1.7) % 6.2832, 1);
+      var R = (20 + (s.brightness / 255) * 46) * params.radius * breathe;
+      var a = clamp(params.intensity * (s.brightness / 255), 0, 1);
+      var g1 = ctx.createRadialGradient(s.x, s.y, R * 0.5, s.x, s.y, R);
+      g1.addColorStop(0, 'rgba(' + comp[0] + ',' + comp[1] + ',' + comp[2] + ',0)');
+      g1.addColorStop(1, 'rgba(' + comp[0] + ',' + comp[1] + ',' + comp[2] + ',' + (0.34 * a).toFixed(3) + ')');
+      ctx.fillStyle = g1; ctx.beginPath(); ctx.arc(s.x, s.y, R, 0, 6.2832); ctx.fill();
+      var g2 = ctx.createRadialGradient(s.x, s.y, R * 0.2, s.x, s.y, R * 0.62);
+      g2.addColorStop(0, 'rgba(' + dom[0] + ',' + dom[1] + ',' + dom[2] + ',0)');
+      g2.addColorStop(1, 'rgba(' + dom[0] + ',' + dom[1] + ',' + dom[2] + ',' + (0.3 * a).toFixed(3) + ')');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(s.x, s.y, R * 0.62, 0, 6.2832); ctx.fill();
+      var g3 = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, R * 0.22);
+      g3.addColorStop(0, 'rgba(255,255,246,' + (0.55 * a).toFixed(3) + ')');
+      g3.addColorStop(1, 'rgba(255,255,246,0)');
+      ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(s.x, s.y, R * 0.22, 0, 6.2832); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Rolling shutter: the frame was scanned line by line, and it shows.
+  // 2 sine waves down the frame, loopSin keeps the seam closed.
+  function rollingShutter(ctx, w, h, amount, phase01) {
+    var c = fxLayer(w, h), x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+    x.clearRect(0, 0, w, h);
+    x.drawImage(ctx.canvas, 0, 0);
+    var maxShift = 7 * amount;
+    for (var y = 0; y < h; y += 2) {
+      var dx = maxShift * A.loopSin(phase01, 1, (y / h) * 6.2832 * 2, 1);
+      if (Math.abs(dx) < 0.15) continue;
+      ctx.drawImage(c, 0, y, w, 2, dx, y, w, 2);
+    }
+  }
+
+  // Photocopy drag: bands of the image smear sideways, then settle.
+  // Band positions/strides are seeded; each band pulses with loopPing.
+  function photocopy(ctx, w, h, params, phase01, seed) {
+    var c = fxLayer(w, h), x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+    x.clearRect(0, 0, w, h);
+    x.drawImage(ctx.canvas, 0, 0);
+    var rnd = lcg(seed || 1);
+    ctx.save();
+    for (var b = 0; b < params.bands; b++) {
+      var by = rnd() * h, bh = 6 + rnd() * 26;
+      var dir = rnd() < 0.5 ? -1 : 1;
+      var pulse = 0.3 + 0.7 * A.loopPing((phase01 + rnd()) % 1, 1);
+      var stretch = dir * params.amount * pulse * w * 0.06;
+      ctx.globalAlpha = clamp(params.amount * pulse, 0, 1) * 0.5;
+      ctx.drawImage(c, 0, by, w, bh, stretch * 0.4, by, w, bh);
+      ctx.globalAlpha *= 0.6;
+      ctx.drawImage(c, 0, by, w, bh, stretch, by, w, bh);
+      ctx.globalAlpha *= 0.6;
+      ctx.drawImage(c, 0, by, w, bh, stretch * 1.8, by, w, bh);
+    }
+    ctx.restore();
+  }
+
   // ------------------------------------------------------------- the stack
   /**
    * Composite one liminal frame.
@@ -433,18 +728,31 @@
       }
     }
 
-    // 2. pixel-level effects (skip the ImageData round-trip when both are off)
-    if (p.chromaticAberration.enabled || p.colorGrade.enabled) {
+    // 2. pixel-level effects (one ImageData round-trip for the whole chain)
+    var needPixels = p.chromaticAberration.enabled || p.colorGrade.enabled ||
+      p.isoGrain.enabled || p.halftone.enabled || p.cmyk.enabled ||
+      p.fax.enabled || p.photoLab.enabled || p.stuckPixels.enabled;
+    if (needPixels) {
       var imgData = ctx.getImageData(0, 0, W, H);
       if (p.chromaticAberration.enabled) {
         imgData = chromaticAberration(imgData, p.chromaticAberration.amount, p.chromaticAberration.mode);
       }
+      if (p.cmyk.enabled) imgData = cmykMisreg(imgData, p.cmyk.amount);
+      if (p.photoLab.enabled) imgData = photoLab(imgData, p.photoLab.recipe, p.photoLab.amount, phase01);
       if (p.colorGrade.enabled) imgData = colorGrade(imgData, p.colorGrade);
+      if (p.fax.enabled) imgData = faxMode(imgData, p.fax.threshold, p.fax.dropouts, phase01, seed || 1);
+      if (p.halftone.enabled) imgData = halftone(imgData, p.halftone.cell, p.halftone.amount, phase01);
+      if (p.isoGrain.enabled) imgData = isoGrain(imgData, p.isoGrain.amount, phase01, seed || 1);
+      if (p.stuckPixels.enabled) imgData = stuckPixels(imgData, p.stuckPixels.count, p.stuckPixels.columns, phase01, seed || 1);
       ctx.putImageData(imgData, 0, 0);
     }
 
     // 3. diffusion bloom
     if (p.diffusion.enabled) diffusion(ctx, W, H, p.diffusion.amount, p.diffusion.radius);
+
+    // 3b. spatial warps (work on the composited frame)
+    if (p.photocopy.enabled) photocopy(ctx, W, H, p.photocopy, phase01, seed || 1);
+    if (p.rollingShutter.enabled) rollingShutter(ctx, W, H, p.rollingShutter.amount, phase01);
 
     // 4. texture overlays
     if (p.scanlines.enabled) scanlines(ctx, W, H, p.scanlines, phase01);
@@ -454,8 +762,10 @@
     if (p.vignette.enabled) vignette(ctx, W, H, p.vignette);
 
     // 5. light-source overlays (detect on the graded frame)
-    if (p.starbursts.enabled || p.anamorphic.enabled) {
+    if (p.starbursts.enabled || p.anamorphic.enabled || p.ringBokeh.enabled || p.chromaAura.enabled) {
       var fresh = ctx.getImageData(0, 0, W, H);
+      if (p.chromaAura.enabled) chromaAura(ctx, W, H, fresh, p.chromaAura, phase01, still);
+      if (p.ringBokeh.enabled) ringBokeh(ctx, W, H, fresh, p.ringBokeh, phase01, still);
       if (p.starbursts.enabled) starbursts(ctx, W, H, fresh, p.starbursts, phase01, still);
       if (p.anamorphic.enabled) anamorphic(ctx, W, H, fresh, p.anamorphic);
     }
@@ -475,7 +785,14 @@
     scanOffset: scanOffset,
     chromaticAberration: chromaticAberration,
     colorGrade: colorGrade,
-    findBrightSpots: findBrightSpots
+    findBrightSpots: findBrightSpots,
+    isoGrain: isoGrain,
+    stuckPixels: stuckPixels,
+    halftone: halftone,
+    cmykMisreg: cmykMisreg,
+    faxMode: faxMode,
+    photoLab: photoLab,
+    dominantColor: dominantColor
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SB;
