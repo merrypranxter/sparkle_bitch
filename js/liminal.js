@@ -44,7 +44,17 @@
       cmyk: { enabled: false, amount: 2 },
       photocopy: { enabled: false, bands: 3, amount: 0.5 },
       fax: { enabled: false, threshold: 140, dropouts: 0.3 },
-      photoLab: { enabled: false, recipe: 'bleach', amount: 0.7 }
+      photoLab: { enabled: false, recipe: 'bleach', amount: 0.7 },
+      // geometry warps
+      shear: { enabled: false, amount: 0.5, waves: 2 },
+      astigmatism: { enabled: false, amount: 0.5, angle: 0 },
+      contours: { enabled: false, steps: 6, strength: 0.7 },
+      gravityWells: { enabled: false, count: 2, strength: 0.6 },
+      // time & weather
+      dayNight: { enabled: false, amount: 0.8 },
+      ghostTrails: { enabled: false, taps: 3, intensity: 0.5 },
+      shadowDrift: { enabled: false, opacity: 0.4, speed: 1 },
+      brownout: { enabled: false, depth: 0.5, flicker: true }
     };
   }
 
@@ -131,6 +141,24 @@
       diffusion: { enabled: true, amount: 0.25, radius: 12 },
       colorGrade: { enabled: true, liftBlack: 0.06, sodium: 0.3, prismShift: false },
       breathingZoom: { enabled: true, amount: 0.6 }
+    },
+    'vertigo': {
+      label: '🌀 Vertigo Relay',
+      shear: { enabled: true, amount: 0.55, waves: 2 },
+      gravityWells: { enabled: true, count: 2, strength: 0.55 },
+      astigmatism: { enabled: true, amount: 0.35, angle: 0 },
+      contours: { enabled: true, steps: 8, strength: 0.35 },
+      breathingZoom: { enabled: true, amount: 0.9 },
+      vignette: { enabled: true, strength: 0.45, color: '#0a0512' }
+    },
+    'twilight': {
+      label: '🌗 Terminal Twilight',
+      dayNight: { enabled: true, amount: 0.85 },
+      brownout: { enabled: true, depth: 0.6, flicker: true },
+      shadowDrift: { enabled: true, opacity: 0.45, speed: 1 },
+      ghostTrails: { enabled: true, taps: 3, intensity: 0.55 },
+      grain: { enabled: true, amount: 0.12, animated: true },
+      vignette: { enabled: true, strength: 0.5, color: '#02020a' }
     }
   };
 
@@ -394,6 +422,104 @@
       d[i] = clamp(r + (nr - r) * k, 0, 255);
       d[i + 1] = clamp(g + (ng - g) * k, 0, 255);
       d[i + 2] = clamp(b + (nb - b) * k, 0, 255);
+    }
+    return imgData;
+  }
+
+  // --- geometry warps + time-loops (pixel cores) ----------------------------
+
+  // Topographic contours: luminance quantized into bands that crawl exactly
+  // one band per loop, with the band boundaries inked like a survey map.
+  function contours(imgData, steps, strength, phase01) {
+    var d = imgData.data;
+    steps = Math.max(2, steps | 0);
+    var band = 255 / steps;
+    var crawl = phase01 * band; // wraps one band per loop -> seamless
+    var th = 2.4; // boundary thickness in luma units
+    var ink = 1 - 0.85 * clamp(strength, 0, 1);
+    for (var i = 0; i < d.length; i += 4) {
+      var l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      var m = (l + crawl) % band;
+      if (m < th || band - m < th) {
+        d[i] *= ink; d[i + 1] *= ink; d[i + 2] *= ink;
+      }
+    }
+    return imgData;
+  }
+
+  // Gravity wells: seeded lens dips that pinch the image toward points
+  // drifting on closed orbits (one revolution per loop). Returns a new frame.
+  function gravityWells(imgData, count, strength, phase01, seed) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var out = newImageData(w, h), o = out.data;
+    var rnd = lcg((seed || 1) * 7 + 3);
+    var mn = Math.min(w, h);
+    var n = Math.max(1, Math.round(count));
+    var wells = [], i;
+    for (i = 0; i < n; i++) {
+      wells.push({
+        cx: (0.22 + rnd() * 0.56) * w,
+        cy: (0.22 + rnd() * 0.56) * h,
+        R: (0.18 + rnd() * 0.22) * mn,
+        orb: (0.04 + rnd() * 0.05) * mn,
+        ph: rnd()
+      });
+    }
+    var s = clamp(strength, 0, 1) * 0.85;
+    for (i = 0; i < wells.length; i++) {
+      var wl = wells[i];
+      wl.x = wl.cx + wl.orb * Math.cos(2 * Math.PI * (phase01 + wl.ph));
+      wl.y = wl.cy + wl.orb * Math.sin(2 * Math.PI * (phase01 + wl.ph));
+    }
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var sx = x, sy = y;
+        for (i = 0; i < wells.length; i++) {
+          wl = wells[i];
+          var dx = x - wl.x, dy = y - wl.y;
+          var r2 = dx * dx + dy * dy, R2 = wl.R * wl.R;
+          if (r2 < R2 * 4) {
+            // sample from farther out -> content pinches toward the well
+            var f = s * Math.exp(-r2 / R2);
+            sx += dx * f; sy += dy * f;
+          }
+        }
+        var ix = clamp(Math.round(sx), 0, w - 1), iy = clamp(Math.round(sy), 0, h - 1);
+        var si = (iy * w + ix) * 4, di = (y * w + x) * 4;
+        o[di] = d[si]; o[di + 1] = d[si + 1]; o[di + 2] = d[si + 2]; o[di + 3] = d[si + 3];
+      }
+    }
+    return out;
+  }
+
+  // A whole day compressed into one loop: warm noon at phase 0, cold dim
+  // midnight at phase 0.5, and back. amount scales the swing.
+  function dayNight(imgData, amount, phase01) {
+    var d = imgData.data, k = clamp(amount, 0, 1);
+    var t = A.loopPing(phase01, 1); // 0 = noon, 1 = midnight
+    var warm = (1 - t) * k, cold = t * k;
+    for (var i = 0; i < d.length; i += 4) {
+      d[i] = clamp(d[i] * (1 - 0.45 * cold) + 14 * warm, 0, 255);
+      d[i + 1] = clamp(d[i + 1] * (1 - 0.42 * cold) + 5 * warm, 0, 255);
+      d[i + 2] = clamp(d[i + 2] * (1 - 0.30 * cold) + 20 * cold - 8 * warm, 0, 255);
+    }
+    return imgData;
+  }
+
+  // Power-grid sag: the whole frame browns out twice per loop, with an
+  // optional seeded fluorescent flicker (8 steps, identical at the seam).
+  function brownout(imgData, depth, flicker, phase01, seed) {
+    var d = imgData.data, k = clamp(depth, 0, 1);
+    var sag = A.loopPing(phase01, 2);
+    sag = sag * sag;
+    var m = 1 - 0.75 * k * sag;
+    if (flicker) {
+      var step = Math.floor(phase01 * 8) % 8;
+      var rnd = lcg((seed || 1) * 31 + step * 17 + 5);
+      m *= 0.9 + rnd() * 0.1;
+    }
+    for (var i = 0; i < d.length; i += 4) {
+      d[i] *= m; d[i + 1] *= m; d[i + 2] *= m;
     }
     return imgData;
   }
@@ -700,6 +826,81 @@
     ctx.restore();
   }
 
+  // Shear pulses: the frame shears horizontally in sine bands, swelling and
+  // relaxing twice per loop (signal through a bent cable).
+  function shearWarp(ctx, w, h, params, phase01) {
+    var amp = params.amount * w * 0.06 * A.loopPing(phase01, 2);
+    if (amp < 0.5) return;
+    var waves = Math.max(1, Math.round(params.waves));
+    var c = fxLayer(w, h), x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+    x.globalAlpha = 1; x.clearRect(0, 0, w, h);
+    x.drawImage(ctx.canvas, 0, 0);
+    for (var y = 0; y < h; y += 2) {
+      var dx = amp * Math.sin((y / h) * 2 * Math.PI * waves);
+      if (Math.abs(dx) >= 0.15) ctx.drawImage(c, 0, y, w, 2, dx, y, w, 2);
+    }
+  }
+
+  // Astigmatism: one axis of the lens refuses to focus. The frame is
+  // re-averaged across offsets along a direction (static flaw, not motion).
+  function astigmatism(ctx, w, h, params) {
+    var len = params.amount * 14;
+    if (len < 0.5) return;
+    var a = (params.angle || 0) * Math.PI / 180;
+    var dxA = Math.cos(a) * len, dyA = Math.sin(a) * len;
+    var N = 7;
+    var c = fxLayer(w, h), x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+    x.globalAlpha = 1; x.clearRect(0, 0, w, h);
+    x.drawImage(ctx.canvas, 0, 0);
+    ctx.save();
+    ctx.clearRect(0, 0, w, h);
+    for (var i = 0; i < N; i++) {
+      var t = (i / (N - 1) - 0.5) * 2; // -1..1
+      ctx.globalAlpha = 1 / (i + 1); // decaying-alpha smear (not an equal-weight average)
+      ctx.drawImage(c, t * dxA, t * dyA);
+    }
+    ctx.restore();
+  }
+
+  // Ghost traffic: echoes of the loop itself — the base redrawn at lagged
+  // loop phases with its own breathing/drift, screen-blended into comet
+  // trails. Loop-safe: every tap is a pure function of (phase01 - lag).
+  function ghostTrails(ctx, w, h, base, params, phase01, still) {
+    if (!base) return;
+    var taps = clamp(Math.round(params.taps), 1, 5);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (var k = 1; k <= taps; k++) {
+      var lag = (phase01 - k / (taps + 2) + 1) % 1;
+      var sc = still ? 1.02 + k * 0.012 : breathScale(lag, 1.2);
+      var bw = w * sc, bh = h * sc;
+      var shx = (still ? k * 3 : A.loopSin(lag, 1, k, 2)) * w * 0.03;
+      ctx.globalAlpha = params.intensity * (1 - k / (taps + 1)) * 0.28;
+      ctx.drawImage(base, (w - bw) / 2 + shx, (h - bh) / 2, bw, bh);
+    }
+    ctx.restore();
+  }
+
+  // Passing-shadow drift: a huge soft darkness sweeps across the frame an
+  // integer number of times per loop (clouds over a parking lot). The sweep
+  // resets while fully off-frame, so the wrap is invisible.
+  function shadowDrift(ctx, w, h, params, phase01, still) {
+    var revs = Math.max(1, Math.round(params.speed || 1));
+    var R = Math.max(w, h) * 0.9;
+    var travel = w + 2.4 * R;
+    var cx = -1.2 * R + (still ? 0.35 : ((phase01 * revs) % 1)) * travel;
+    var cy = h * 0.4;
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    g.addColorStop(0, 'rgba(0,0,6,' + clamp(params.opacity, 0, 1) + ')');
+    g.addColorStop(1, 'rgba(0,0,6,0)');
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
   // ------------------------------------------------------------- the stack
   /**
    * Composite one liminal frame.
@@ -731,16 +932,24 @@
     // 2. pixel-level effects (one ImageData round-trip for the whole chain)
     var needPixels = p.chromaticAberration.enabled || p.colorGrade.enabled ||
       p.isoGrain.enabled || p.halftone.enabled || p.cmyk.enabled ||
-      p.fax.enabled || p.photoLab.enabled || p.stuckPixels.enabled;
+      p.fax.enabled || p.photoLab.enabled || p.stuckPixels.enabled ||
+      p.contours.enabled || p.gravityWells.enabled || p.dayNight.enabled ||
+      p.brownout.enabled;
     if (needPixels) {
       var imgData = ctx.getImageData(0, 0, W, H);
+      if (p.gravityWells.enabled) {
+        imgData = gravityWells(imgData, p.gravityWells.count, p.gravityWells.strength, phase01, seed || 1);
+      }
       if (p.chromaticAberration.enabled) {
         imgData = chromaticAberration(imgData, p.chromaticAberration.amount, p.chromaticAberration.mode);
       }
       if (p.cmyk.enabled) imgData = cmykMisreg(imgData, p.cmyk.amount);
+      if (p.dayNight.enabled) imgData = dayNight(imgData, p.dayNight.amount, phase01);
+      if (p.brownout.enabled) imgData = brownout(imgData, p.brownout.depth, p.brownout.flicker, phase01, seed || 1);
       if (p.photoLab.enabled) imgData = photoLab(imgData, p.photoLab.recipe, p.photoLab.amount, phase01);
       if (p.colorGrade.enabled) imgData = colorGrade(imgData, p.colorGrade);
       if (p.fax.enabled) imgData = faxMode(imgData, p.fax.threshold, p.fax.dropouts, phase01, seed || 1);
+      if (p.contours.enabled) imgData = contours(imgData, p.contours.steps, p.contours.strength, phase01);
       if (p.halftone.enabled) imgData = halftone(imgData, p.halftone.cell, p.halftone.amount, phase01);
       if (p.isoGrain.enabled) imgData = isoGrain(imgData, p.isoGrain.amount, phase01, seed || 1);
       if (p.stuckPixels.enabled) imgData = stuckPixels(imgData, p.stuckPixels.count, p.stuckPixels.columns, phase01, seed || 1);
@@ -751,14 +960,17 @@
     if (p.diffusion.enabled) diffusion(ctx, W, H, p.diffusion.amount, p.diffusion.radius);
 
     // 3b. spatial warps (work on the composited frame)
+    if (p.shear.enabled) shearWarp(ctx, W, H, p.shear, phase01);
     if (p.photocopy.enabled) photocopy(ctx, W, H, p.photocopy, phase01, seed || 1);
     if (p.rollingShutter.enabled) rollingShutter(ctx, W, H, p.rollingShutter.amount, phase01);
+    if (p.astigmatism.enabled) astigmatism(ctx, W, H, p.astigmatism);
 
     // 4. texture overlays
     if (p.scanlines.enabled) scanlines(ctx, W, H, p.scanlines, phase01);
     if (p.moire.enabled) moire(ctx, W, H, p.moire, phase01);
     if (p.grain.enabled) grain(ctx, W, H, p.grain, phase01, seed || 1);
     if (p.prismatic.enabled) prismatic(ctx, W, H, p.prismatic);
+    if (p.shadowDrift.enabled) shadowDrift(ctx, W, H, p.shadowDrift, phase01, still);
     if (p.vignette.enabled) vignette(ctx, W, H, p.vignette);
 
     // 5. light-source overlays (detect on the graded frame)
@@ -769,6 +981,7 @@
       if (p.starbursts.enabled) starbursts(ctx, W, H, fresh, p.starbursts, phase01, still);
       if (p.anamorphic.enabled) anamorphic(ctx, W, H, fresh, p.anamorphic);
     }
+    if (p.ghostTrails.enabled) ghostTrails(ctx, W, H, base, p.ghostTrails, phase01, still);
 
     // 6. frame
     if (p.roundedFrame.enabled) roundedFrame(ctx, W, H, p.roundedFrame);
@@ -792,7 +1005,11 @@
     cmykMisreg: cmykMisreg,
     faxMode: faxMode,
     photoLab: photoLab,
-    dominantColor: dominantColor
+    dominantColor: dominantColor,
+    contours: contours,
+    gravityWells: gravityWells,
+    dayNight: dayNight,
+    brownout: brownout
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SB;

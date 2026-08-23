@@ -333,6 +333,51 @@
         </details>
 
         <details class="group lim-details">
+          <summary>Geometry warps</summary>
+          <label class="ctl check"><input type="checkbox" id="limShearOn" data-lim="shear.enabled" /> Shear pulses</label>
+          <label class="ctl"><span>Shear amount <b data-label-for="limShearAmount"></b></span>
+            <input id="limShearAmount" type="range" min="0" max="1" step="0.05" data-lim="shear.amount" /></label>
+          <label class="ctl"><span>Shear waves <b data-label-for="limShearWaves"></b></span>
+            <input id="limShearWaves" type="range" min="1" max="5" step="1" data-lim="shear.waves" /></label>
+          <label class="ctl check"><input type="checkbox" id="limAstigOn" data-lim="astigmatism.enabled" /> Astigmatism smear</label>
+          <label class="ctl"><span>Smear amount <b data-label-for="limAstigAmount"></b></span>
+            <input id="limAstigAmount" type="range" min="0" max="1" step="0.05" data-lim="astigmatism.amount" /></label>
+          <label class="ctl"><span>Smear angle <b data-label-for="limAstigAngle"></b></span>
+            <input id="limAstigAngle" type="range" min="0" max="180" step="5" data-lim="astigmatism.angle" /></label>
+          <label class="ctl check"><input type="checkbox" id="limContourOn" data-lim="contours.enabled" /> Topographic contours</label>
+          <label class="ctl"><span>Contour bands <b data-label-for="limContourSteps"></b></span>
+            <input id="limContourSteps" type="range" min="3" max="16" step="1" data-lim="contours.steps" /></label>
+          <label class="ctl"><span>Ink strength <b data-label-for="limContourStrength"></b></span>
+            <input id="limContourStrength" type="range" min="0" max="1" step="0.05" data-lim="contours.strength" /></label>
+          <label class="ctl check"><input type="checkbox" id="limWellsOn" data-lim="gravityWells.enabled" /> Gravity wells</label>
+          <label class="ctl"><span>Well count <b data-label-for="limWellsCount"></b></span>
+            <input id="limWellsCount" type="range" min="1" max="4" step="1" data-lim="gravityWells.count" /></label>
+          <label class="ctl"><span>Pull strength <b data-label-for="limWellsStrength"></b></span>
+            <input id="limWellsStrength" type="range" min="0" max="1" step="0.05" data-lim="gravityWells.strength" /></label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>Time &amp; weather</summary>
+          <label class="ctl check"><input type="checkbox" id="limDayOn" data-lim="dayNight.enabled" /> Day-night cycle</label>
+          <label class="ctl"><span>Cycle depth <b data-label-for="limDayAmount"></b></span>
+            <input id="limDayAmount" type="range" min="0" max="1" step="0.05" data-lim="dayNight.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limGhostOn" data-lim="ghostTrails.enabled" /> Ghost traffic trails</label>
+          <label class="ctl"><span>Echo count <b data-label-for="limGhostTaps"></b></span>
+            <input id="limGhostTaps" type="range" min="1" max="5" step="1" data-lim="ghostTrails.taps" /></label>
+          <label class="ctl"><span>Echo intensity <b data-label-for="limGhostIntensity"></b></span>
+            <input id="limGhostIntensity" type="range" min="0" max="1" step="0.05" data-lim="ghostTrails.intensity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limShadowOn" data-lim="shadowDrift.enabled" /> Passing shadows</label>
+          <label class="ctl"><span>Shadow darkness <b data-label-for="limShadowOpacity"></b></span>
+            <input id="limShadowOpacity" type="range" min="0" max="0.8" step="0.05" data-lim="shadowDrift.opacity" /></label>
+          <label class="ctl"><span>Sweeps per loop <b data-label-for="limShadowSpeed"></b></span>
+            <input id="limShadowSpeed" type="range" min="1" max="3" step="1" data-lim="shadowDrift.speed" /></label>
+          <label class="ctl check"><input type="checkbox" id="limBrownOn" data-lim="brownout.enabled" /> Brownout sag</label>
+          <label class="ctl"><span>Sag depth <b data-label-for="limBrownDepth"></b></span>
+            <input id="limBrownDepth" type="range" min="0" max="1" step="0.05" data-lim="brownout.depth" /></label>
+          <label class="ctl check"><input type="checkbox" id="limBrownFlicker" data-lim="brownout.flicker" /> Fluorescent flicker</label>
+        </details>
+
+        <details class="group lim-details">
           <summary>Frame &amp; motion</summary>
           <label class="ctl check"><input type="checkbox" id="limRoundOn" data-lim="roundedFrame.enabled" /> Rounded frame</label>
           <label class="ctl"><span>Corner radius <b data-label-for="limRoundRadius"></b></span>
