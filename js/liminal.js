@@ -468,8 +468,8 @@
     var s = clamp(strength, 0, 1) * 0.85;
     for (i = 0; i < wells.length; i++) {
       var wl = wells[i];
-      wl.x = wl.cx + wl.orb * Math.cos(6.2832 * (phase01 + wl.ph));
-      wl.y = wl.cy + wl.orb * Math.sin(6.2832 * (phase01 + wl.ph));
+      wl.x = wl.cx + wl.orb * Math.cos(2 * Math.PI * (phase01 + wl.ph));
+      wl.y = wl.cy + wl.orb * Math.sin(2 * Math.PI * (phase01 + wl.ph));
     }
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
@@ -833,7 +833,8 @@
     if (amp < 0.5) return;
     var waves = Math.max(1, Math.round(params.waves));
     var c = fxLayer(w, h), x = c.getContext('2d');
-    x.clearRect(0, 0, w, h);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+    x.globalAlpha = 1; x.clearRect(0, 0, w, h);
     x.drawImage(ctx.canvas, 0, 0);
     for (var y = 0; y < h; y += 2) {
       var dx = amp * Math.sin((y / h) * 6.2832 * waves);
@@ -850,7 +851,8 @@
     var dxA = Math.cos(a) * len, dyA = Math.sin(a) * len;
     var N = 7;
     var c = fxLayer(w, h), x = c.getContext('2d');
-    x.clearRect(0, 0, w, h);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+    x.globalAlpha = 1; x.clearRect(0, 0, w, h);
     x.drawImage(ctx.canvas, 0, 0);
     ctx.save();
     ctx.clearRect(0, 0, w, h);

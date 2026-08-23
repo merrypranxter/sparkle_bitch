@@ -299,8 +299,6 @@ assert(Buffer.from(wlA.data).equals(Buffer.from(wlB.data)), 'gravityWells: orbit
 // corners are outside every well's reach (wells live in the central 56%)
 assert(wl1.data[0] === 128 && chan(wl1, WW - 1, WH - 1, 0) === 128,
   'gravityWells: far corners untouched');
-// non-uniform source: a single white pixel gets pulled toward a well
-const pinchSrc = { width: WW, height: WH, data: new Uint8ClampedArray(wellSrc.data) };
 // put wells at a known place: seed 9 well 0 sits near cx=(0.22+r*0.56)*40 — just
 // verify SOME displacement happens on a gradient source instead of grey flat
 const grad = rampImg(); grad.width = CW; // reuse 32x8 ramp
