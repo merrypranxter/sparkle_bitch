@@ -265,6 +265,30 @@
         </details>
 
         <details class="group lim-details">
+          <summary>Lens &amp; sensor</summary>
+          <label class="ctl check"><input type="checkbox" id="limRingOn" data-lim="ringBokeh.enabled" /> Ring bokeh (mirror-lens halos)</label>
+          <label class="ctl"><span>Ring size <b data-label-for="limRingSize"></b></span>
+            <input id="limRingSize" type="range" min="0.4" max="2" step="0.05" data-lim="ringBokeh.size" /></label>
+          <label class="ctl"><span>Ring intensity <b data-label-for="limRingIntensity"></b></span>
+            <input id="limRingIntensity" type="range" min="0" max="1.5" step="0.05" data-lim="ringBokeh.intensity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limAuraOn" data-lim="chromaAura.enabled" /> Chromatic aura bloom</label>
+          <label class="ctl"><span>Aura radius <b data-label-for="limAuraRadius"></b></span>
+            <input id="limAuraRadius" type="range" min="0.4" max="2" step="0.05" data-lim="chromaAura.radius" /></label>
+          <label class="ctl"><span>Aura intensity <b data-label-for="limAuraIntensity"></b></span>
+            <input id="limAuraIntensity" type="range" min="0" max="1.5" step="0.05" data-lim="chromaAura.intensity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limIsoOn" data-lim="isoGrain.enabled" /> ISO push grain</label>
+          <label class="ctl"><span>Push amount <b data-label-for="limIsoAmount"></b></span>
+            <input id="limIsoAmount" type="range" min="0" max="1" step="0.05" data-lim="isoGrain.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limStuckOn" data-lim="stuckPixels.enabled" /> Stuck pixels (dying CCD)</label>
+          <label class="ctl"><span>Hot pixel count <b data-label-for="limStuckCount"></b></span>
+            <input id="limStuckCount" type="range" min="0" max="80" step="2" data-lim="stuckPixels.count" /></label>
+          <label class="ctl check"><input type="checkbox" id="limStuckCols" data-lim="stuckPixels.columns" /> Column noise</label>
+          <label class="ctl check"><input type="checkbox" id="limRollOn" data-lim="rollingShutter.enabled" /> Rolling shutter wobble</label>
+          <label class="ctl"><span>Wobble amount <b data-label-for="limRollAmount"></b></span>
+            <input id="limRollAmount" type="range" min="0" max="1" step="0.05" data-lim="rollingShutter.amount" /></label>
+        </details>
+
+        <details class="group lim-details">
           <summary>Color grade</summary>
           <label class="ctl check"><input type="checkbox" id="limGradeOn" data-lim="colorGrade.enabled" /> Enable grade</label>
           <label class="ctl"><span>Lift blacks (fade) <b data-label-for="limLiftBlack"></b></span>
@@ -272,6 +296,40 @@
           <label class="ctl"><span>Sodium vapor <b data-label-for="limSodium"></b></span>
             <input id="limSodium" type="range" min="0" max="1" step="0.05" data-lim="colorGrade.sodium" /></label>
           <label class="ctl check"><input type="checkbox" id="limPrismShift" data-lim="colorGrade.prismShift" /> Prism shift</label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>Print &amp; photo lab</summary>
+          <label class="ctl check"><input type="checkbox" id="limHalfOn" data-lim="halftone.enabled" /> Halftone screen</label>
+          <label class="ctl"><span>Dot size <b data-label-for="limHalfCell"></b></span>
+            <input id="limHalfCell" type="range" min="3" max="12" step="1" data-lim="halftone.cell" /></label>
+          <label class="ctl"><span>Screen strength <b data-label-for="limHalfAmount"></b></span>
+            <input id="limHalfAmount" type="range" min="0" max="1" step="0.05" data-lim="halftone.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limCmykOn" data-lim="cmyk.enabled" /> CMYK misregistration</label>
+          <label class="ctl"><span>Plate slip <b data-label-for="limCmykAmount"></b></span>
+            <input id="limCmykAmount" type="range" min="0" max="6" step="0.5" data-lim="cmyk.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limCopyOn" data-lim="photocopy.enabled" /> Photocopy drag</label>
+          <label class="ctl"><span>Smear bands <b data-label-for="limCopyBands"></b></span>
+            <input id="limCopyBands" type="range" min="1" max="6" step="1" data-lim="photocopy.bands" /></label>
+          <label class="ctl"><span>Drag amount <b data-label-for="limCopyAmount"></b></span>
+            <input id="limCopyAmount" type="range" min="0" max="1" step="0.05" data-lim="photocopy.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limFaxOn" data-lim="fax.enabled" /> Fax mode</label>
+          <label class="ctl"><span>Fax threshold <b data-label-for="limFaxThreshold"></b></span>
+            <input id="limFaxThreshold" type="range" min="60" max="220" step="5" data-lim="fax.threshold" /></label>
+          <label class="ctl"><span>Row dropouts <b data-label-for="limFaxDrop"></b></span>
+            <input id="limFaxDrop" type="range" min="0" max="1" step="0.05" data-lim="fax.dropouts" /></label>
+          <label class="ctl check"><input type="checkbox" id="limLabOn" data-lim="photoLab.enabled" /> Photo lab chemistry</label>
+          <label class="ctl"><span>Recipe</span>
+            <select id="limLabRecipe" data-lim="photoLab.recipe">
+              <option value="bleach">Bleach bypass</option>
+              <option value="crossWarm">Cross-process: warm</option>
+              <option value="crossCold">Cross-process: cold</option>
+              <option value="crossToxic">Cross-process: toxic</option>
+              <option value="solarize">Solarize</option>
+              <option value="lomo">LOMO pop</option>
+            </select></label>
+          <label class="ctl"><span>Chemistry strength <b data-label-for="limLabAmount"></b></span>
+            <input id="limLabAmount" type="range" min="0" max="1" step="0.05" data-lim="photoLab.amount" /></label>
         </details>
 
         <details class="group lim-details">
