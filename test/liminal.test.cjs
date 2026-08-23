@@ -238,6 +238,8 @@ assert(Buffer.from(spA.data).equals(Buffer.from(spB.data)), 'stuckPixels: blinki
 const spCol = { width: SP, height: SP, data: new Uint8ClampedArray(spBase.data) };
 LIM.stuckPixels(spCol, 0, true, 0, 5);
 let colDiff = false;
+for (let y = 0; y < SP; y++) if (chan(spCol, 3, y, 0) !== chan(spCol, 4, y, 0)) { colDiff = true; break; }
+assert(colDiff, 'stuckPixels: column noise makes adjacent columns differ');
 
 // --- dominantColor: coarse scene average ---
 const dom = LIM.dominantColor({ width: 4, height: 4, data: new Uint8ClampedArray([200, 40, 40, 255].concat(new Array(60).fill(0))) });
