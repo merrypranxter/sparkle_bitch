@@ -739,6 +739,48 @@ async function poll(page, fn, timeout, label) {
     ok(lim.manualOff, 'liminal: manual tweak overrides preset (custom stack)');
     ok(lim.gifFrames > 1, 'liminal: GIF export works (' + lim.gifFrames + ' frames)');
 
+    // ---- LIMINAL EXPANSION: optics + print stacks ----
+    const lim2 = await page.evaluate(async () => {
+      var SBM = window.SparkleBitch, out = {};
+      function meanLuma(cv) {
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, m = 0, n = 0;
+        for (var i = 0; i < d.length; i += 4) { m += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++; }
+        return m / n;
+      }
+      SBM.applyLiminalPreset('');                            // all effects off
+      out.meanOff = meanLuma(SBM.renderStillCanvas());
+      // Mirror-Lens Motel: ring bokeh + chromatic auras around the five lamps
+      SBM.applyLiminalPreset('mirrorlens');
+      out.presetML = SBM.state.liminal.preset === 'mirrorlens' &&
+        SBM.state.liminal.ringBokeh.enabled && SBM.state.liminal.chromaAura.enabled &&
+        SBM.state.liminal.isoGrain.enabled && SBM.state.liminal.stuckPixels.enabled &&
+        SBM.state.liminal.rollingShutter.enabled;
+      out.meanML = meanLuma(SBM.renderStillCanvas());
+      // Office Fax 2003: near-bilevel crush
+      SBM.applyLiminalPreset('fax2003');
+      out.presetFax = SBM.state.liminal.preset === 'fax2003' && SBM.state.liminal.fax.enabled;
+      var cv = SBM.renderStillCanvas();
+      var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      var extremes = 0, n = 0;
+      for (var i = 0; i < d.length; i += 4) { if (d[i] < 60 || d[i] > 195) extremes++; n++; }
+      out.faxFrac = extremes / n;
+      out.chips = document.querySelectorAll('#limPresets .chip').length;
+      // back to a custom stack so the persistence asserts below stay valid
+      SBM.setLiminal('fax.enabled', false);
+      out.customAfter = SBM.state.liminal.preset === '' && SBM.state.liminal.scanlines.enabled === true;
+      // GIF export still runs the expanded stack frame by frame
+      var u8 = new Uint8Array(await SBM.exportGifBytes());
+      out.gifFrames = SB.decodeGIF(u8).frames.length;
+      return out;
+    });
+    ok(lim2.presetML, 'liminal: Mirror-Lens Motel chip applies its stack');
+    ok(lim2.meanML > lim2.meanOff + 8, 'liminal: ring bokeh + auras lift the frame (' + lim2.meanOff.toFixed(1) + ' -> ' + lim2.meanML.toFixed(1) + ')');
+    ok(lim2.presetFax, 'liminal: Office Fax 2003 chip applies');
+    ok(lim2.faxFrac > 0.6, 'liminal: fax mode crushes toward bilevel (' + (lim2.faxFrac * 100).toFixed(0) + '% extreme)');
+    ok(lim2.chips >= 8, 'liminal: expanded vibe chips rendered (' + lim2.chips + ')');
+    ok(lim2.customAfter, 'liminal: manual tweak returns to a custom stack');
+    ok(lim2.gifFrames > 1, 'liminal: expanded stack still exports GIF (' + lim2.gifFrames + ' frames)');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');
