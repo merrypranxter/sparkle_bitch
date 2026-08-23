@@ -238,3 +238,182 @@ assert(Buffer.from(spA.data).equals(Buffer.from(spB.data)), 'stuckPixels: blinki
 const spCol = { width: SP, height: SP, data: new Uint8ClampedArray(spBase.data) };
 LIM.stuckPixels(spCol, 0, true, 0, 5);
 let colDiff = false;
+
+// --- dominantColor: coarse scene average ---
+const dom = LIM.dominantColor({ width: 4, height: 4, data: new Uint8ClampedArray([200, 40, 40, 255].concat(new Array(60).fill(0))) });
+assert(Array.isArray(dom) && dom.length === 3, 'dominantColor: returns [r,g,b]');
+
+// --- geometry/time vibe presets wire up their stacks ---
+const vt = LIM.preset('vertigo');
+assert(vt.preset === 'vertigo' && vt.shear.enabled && vt.gravityWells.enabled &&
+  vt.astigmatism.enabled && vt.contours.enabled && vt.breathingZoom.enabled,
+  'preset: Vertigo Relay enables shear + wells + astigmatism + contours');
+assert(vt.dayNight.enabled === false && vt.brownout.enabled === false,
+  'preset: vertigo keeps the time stack off');
+const tw = LIM.preset('twilight');
+assert(tw.preset === 'twilight' && tw.dayNight.enabled && tw.brownout.enabled &&
+  tw.shadowDrift.enabled && tw.ghostTrails.enabled,
+  'preset: Terminal Twilight enables day-night + brownout + shadows + ghosts');
+assert(LIM.presetList().length >= 9, 'preset list: 9+ vibes (' + LIM.presetList().length + ')');
+
+// --- contours: band boundaries get inked, crawl wraps one band per loop ---
+// horizontal luma ramp 0..255 across 32px, 8 bands of ~31.9 luma each
+const CW = 32, CH = 8;
+function rampImg() {
+  const im = { width: CW, height: CH, data: new Uint8ClampedArray(CW * CH * 4) };
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    const i = (y * CW + x) * 4, v = (x / (CW - 1)) * 255;
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+  }
+  return im;
+}
+const co1 = rampImg();
+LIM.contours(co1, 8, 1, 0);
+let inked = 0;
+for (let x = 0; x < CW; x++) {
+  const v = (x / (CW - 1)) * 255;
+  if (chan(co1, x, 4, 0) < v - 10) inked++;
+}
+assert(inked >= 5, 'contours: band boundaries inked across the ramp (' + inked + '/' + CW + ' columns)');
+const coMid = rampImg();
+LIM.contours(coMid, 8, 1, 0);
+const midV = (16 / 31) * 255; // ~131.6, deep inside band 4 -> not inked
+assert(chan(coMid, 16, 4, 0) === Math.round(midV) || chan(coMid, 16, 4, 0) >= midV - 2,
+  'contours: mid-band pixels untouched (' + chan(coMid, 16, 4, 0) + ' vs ' + midV.toFixed(1) + ')');
+const coA = rampImg(), coB = rampImg();
+LIM.contours(coA, 8, 1, 0); LIM.contours(coB, 8, 1, 1);
+assert(Buffer.from(coA.data).equals(Buffer.from(coB.data)), 'contours: crawl wraps exactly one band per loop');
+
+// --- gravity wells: pinches pixels near the well, far pixels untouched ---
+const WW = 40, WH = 40;
+const wellSrc = { width: WW, height: WH, data: new Uint8ClampedArray(WW * WH * 4) };
+for (let i = 0; i < wellSrc.data.length; i += 4) {
+  wellSrc.data[i] = 128; wellSrc.data[i + 1] = 128; wellSrc.data[i + 2] = 128; wellSrc.data[i + 3] = 255;
+}
+const wl1 = LIM.gravityWells(wellSrc, 2, 0.8, 0.25, 9);
+const wl2 = LIM.gravityWells(wellSrc, 2, 0.8, 0.25, 9);
+assert(Buffer.from(wl1.data).equals(Buffer.from(wl2.data)), 'gravityWells: deterministic for same seed+phase');
+const wlA = LIM.gravityWells(wellSrc, 2, 0.8, 0, 9);
+const wlB = LIM.gravityWells(wellSrc, 2, 0.8, 1, 9);
+assert(Buffer.from(wlA.data).equals(Buffer.from(wlB.data)), 'gravityWells: orbits close the loop');
+// corners are outside every well's reach (wells live in the central 56%)
+assert(wl1.data[0] === 128 && chan(wl1, WW - 1, WH - 1, 0) === 128,
+  'gravityWells: far corners untouched');
+// put wells at a known place: seed 9 well 0 sits near cx=(0.22+r*0.56)*40 — just
+// verify SOME displacement happens on a gradient source instead of grey flat
+const grad = rampImg(); grad.width = CW; // reuse 32x8 ramp
+const gwGrad = LIM.gravityWells(grad, 3, 1, 0.4, 4);
+let moved = false;
+for (let x = 2; x < CW - 2; x++)
+  if (Math.abs(chan(gwGrad, x, 4, 0) - chan(grad, x, 4, 0)) > 4) { moved = true; break; }
+assert(moved, 'gravityWells: strong wells visibly remap the ramp');
+
+// --- dayNight: noon is warm, midnight is cold + dim, loop closes ---
+function dnPixel(r, g, b, amount, phase) {
+  const im = { width: 1, height: 1, data: new Uint8ClampedArray([r, g, b, 255]) };
+  LIM.dayNight(im, amount, phase);
+  return [im.data[0], im.data[1], im.data[2]];
+}
+const noon = dnPixel(140, 140, 140, 1, 0);
+assert(noon[0] > 140 && noon[2] < 140, 'dayNight: noon warms the scene (r=' + noon[0] + ', b=' + noon[2] + ')');
+const midnight = dnPixel(140, 140, 140, 1, 0.5);
+assert(midnight[2] > midnight[0], 'dayNight: midnight turns blue (b=' + midnight[2] + ' > r=' + midnight[0] + ')');
+const noonMean = (noon[0] + noon[1] + noon[2]) / 3;
+const midMean = (midnight[0] + midnight[1] + midnight[2]) / 3;
+assert(midMean < noonMean * 0.8, 'dayNight: midnight is much dimmer (' + midMean.toFixed(0) + ' vs ' + noonMean.toFixed(0) + ')');
+const dnA = dnPixel(140, 140, 140, 1, 0), dnB = dnPixel(140, 140, 140, 1, 1);
+assert(dnA[0] === dnB[0] && dnA[2] === dnB[2], 'dayNight: closes the loop');
+
+// --- brownout: sags twice per loop, flicker deterministic, loop closes ---
+function boMean(v, depth, flicker, phase, seed) {
+  const im = uniImg(v, 8);
+  LIM.brownout(im, depth, flicker, phase, seed);
+  return mean(im);
+}
+const boFull = boMean(200, 0.8, false, 0, 5);
+assert(boFull === 200, 'brownout: no sag at phase 0 (' + boFull + ')');
+const boSag = boMean(200, 0.8, false, 0.25, 5);
+assert(boSag < 200 * 0.5, 'brownout: deep sag at quarter loop (200 -> ' + boSag.toFixed(1) + ')');
+const boEnd = boMean(200, 0.8, false, 1, 5);
+assert(boEnd === 200, 'brownout: closes the loop at phase 1');
+const boF1 = boMean(200, 0.8, true, 0.3, 5), boF2 = boMean(200, 0.8, true, 0.3, 5);
+assert(boF1 === boF2, 'brownout: flicker is deterministic for same seed');
+const boNoF = boMean(200, 0, true, 0.3, 5);
+assert(boNoF < 200, 'brownout: flicker still shimmers at zero depth (' + boNoF.toFixed(1) + ')');
+
+// --- os residue + ai hallucination vibe presets wire up their stacks ---
+const ph = LIM.preset('phantom');
+assert(ph.preset === 'phantom' && ph.burnIn.enabled && ph.windowDrag.enabled &&
+  ph.dialogGhost.enabled && ph.cursorTrail.enabled,
+  'preset: Phantom Desktop enables burn-in + windows + dialog + cursor');
+assert(ph.pareidolia.enabled === false && ph.semanticMelt.enabled === false,
+  'preset: phantom keeps the hallucination stack off');
+const la = LIM.preset('latent');
+assert(la.preset === 'latent' && la.pareidolia.enabled && la.denoiseBlocks.enabled &&
+  la.semanticMelt.enabled && la.latentGrid.enabled,
+  'preset: Latent Dream enables faces + denoise + melt + pixelation');
+assert(LIM.presetList().length >= 11, 'preset list: 11+ vibes (' + LIM.presetList().length + ')');
+
+// --- semanticMelt: columns droop downward, deterministic, loop closes ---
+// vertical gradient (luma rises with y): a downward droop darkens the bottom
+function vGradImg(w, h) {
+  const im = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, v = Math.round((y / (h - 1)) * 240);
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+  }
+  return im;
+}
+function bandMean(im, y0, y1) {
+  let s = 0, n = 0;
+  for (let y = y0; y < y1; y++) for (let x = 0; x < im.width; x++) { s += im.data[(y * im.width + x) * 4]; n++; }
+  return s / n;
+}
+const melt0 = vGradImg(8, 40), meltMid = vGradImg(8, 40);
+LIM.semanticMelt(meltMid, 1, 0.5, 11);
+const meltBotBefore = bandMean(melt0, 30, 40), meltBotAfter = bandMean(meltMid, 30, 40);
+assert(meltBotAfter < meltBotBefore - 5,
+  'semanticMelt: bottom rows droop darker (' + meltBotBefore.toFixed(1) + ' -> ' + meltBotAfter.toFixed(1) + ')');
+const meltTopBefore = bandMean(melt0, 0, 6), meltTopAfter = bandMean(meltMid, 0, 6);
+assert(Math.abs(meltTopAfter - meltTopBefore) < 2,
+  'semanticMelt: top rows barely move (' + meltTopBefore.toFixed(1) + ' -> ' + meltTopAfter.toFixed(1) + ')');
+const meltD1 = vGradImg(8, 40), meltD2 = vGradImg(8, 40);
+LIM.semanticMelt(meltD1, 1, 0.5, 11); LIM.semanticMelt(meltD2, 1, 0.5, 11);
+assert(Buffer.from(meltD1.data).equals(Buffer.from(meltD2.data)), 'semanticMelt: deterministic for same seed');
+const meltA = vGradImg(8, 40), meltB = vGradImg(8, 40);
+LIM.semanticMelt(meltA, 1, 0, 11); LIM.semanticMelt(meltB, 1, 1, 11);
+assert(Buffer.from(meltA.data).equals(Buffer.from(meltB.data)), 'semanticMelt: closes the loop');
+const meltOff = vGradImg(8, 40);
+LIM.semanticMelt(meltOff, 0, 0.5, 11);
+assert(bandMean(meltOff, 30, 40) === meltBotBefore, 'semanticMelt: amount 0 leaves the frame alone');
+
+// --- denoiseBlocks: blocks breathe static, deterministic, loop closes ---
+const dn0a = uniImg(128, 16), dn0b = uniImg(128, 16);
+LIM.denoiseBlocks(dn0a, 1, 8, 0, 7); LIM.denoiseBlocks(dn0b, 1, 8, 1, 7);
+assert(Buffer.from(dn0a.data).equals(Buffer.from(dn0b.data)), 'denoiseBlocks: closes the loop');
+const dnMa = uniImg(128, 16), dnMb = uniImg(128, 16);
+LIM.denoiseBlocks(dnMa, 1, 8, 0.5, 7); LIM.denoiseBlocks(dnMb, 1, 8, 0.5, 7);
+assert(Buffer.from(dnMa.data).equals(Buffer.from(dnMb.data)), 'denoiseBlocks: deterministic for same seed');
+let dnDiff = 0;
+for (let i = 0; i < dnMa.data.length; i += 4) dnDiff += Math.abs(dnMa.data[i] - 128);
+dnDiff /= (dnMa.data.length / 4);
+assert(dnDiff > 3, 'denoiseBlocks: static shimmers mid-loop (mean |delta| ' + dnDiff.toFixed(1) + ')');
+const dnOff = uniImg(128, 16);
+LIM.denoiseBlocks(dnOff, 0, 8, 0.5, 7);
+assert(mean(dnOff) === 128, 'denoiseBlocks: amount 0 leaves the frame alone');
+
+// --- latentGrid: mosaic cells share colour, collapses are loop-sealed ---
+const lg0a = vGradImg(32, 32), lg0b = vGradImg(32, 32);
+LIM.latentGrid(lg0a, 1, 16, 0); LIM.latentGrid(lg0b, 1, 16, 1);
+assert(Buffer.from(lg0a.data).equals(Buffer.from(lg0b.data)), 'latentGrid: closes the loop');
+const lgMid = vGradImg(32, 32);
+LIM.latentGrid(lgMid, 1, 16, 0.5);
+assert(chan(lgMid, 0, 0, 0) === chan(lgMid, 1, 0, 0) && chan(lgMid, 5, 3, 0) === chan(lgMid, 4, 3, 0),
+  'latentGrid: neighbours collapse into shared mosaic cells');
+const lgOff = vGradImg(32, 32);
+LIM.latentGrid(lgOff, 0, 16, 0.5);
+assert(Buffer.from(lgOff.data).equals(Buffer.from(vGradImg(32, 32).data)),
+  'latentGrid: amount 0 leaves the frame alone');
+
+console.log(failures === 0 ? '\nLIMINAL OK' : '\nLIMINAL FAILED (' + failures + ')');
+process.exit(failures === 0 ? 0 : 1);
