@@ -855,9 +855,7 @@
     ctx.save();
     ctx.clearRect(0, 0, w, h);
     for (var i = 0; i < N; i++) {
-      var t = (i / (N - 1) - 0.5) * 2; // -1..1
-      ctx.globalAlpha = 1 / (i + 1); // running average -> equal-weight smear
-      ctx.drawImage(c, t * dxA, t * dyA);
+      ctx.globalAlpha = 1 / (i + 1); // decaying-alpha smear (not an equal-weight average)
     }
     ctx.restore();
   }
