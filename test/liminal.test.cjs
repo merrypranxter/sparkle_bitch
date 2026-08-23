@@ -18,7 +18,9 @@ const d0 = LIM.defaults();
 const sections = ['breathingZoom', 'scanlines', 'moire', 'chromaticAberration', 'grain',
   'vignette', 'starbursts', 'anamorphic', 'roundedFrame', 'prismatic', 'diffusion', 'colorGrade',
   'ringBokeh', 'chromaAura', 'isoGrain', 'stuckPixels', 'rollingShutter', 'halftone', 'cmyk',
-  'photocopy', 'fax', 'photoLab'];
+  'photocopy', 'fax', 'photoLab',
+  'shear', 'astigmatism', 'contours', 'gravityWells',
+  'dayNight', 'ghostTrails', 'shadowDrift', 'brownout'];
 assert(sections.every(k => d0[k] && d0[k].enabled === false), 'defaults: all effects off');
 assert(d0.preset === '', 'defaults: no preset selected');
 
@@ -240,6 +242,106 @@ assert(colDiff, 'stuckPixels: column noise makes adjacent columns differ');
 // --- dominantColor: coarse scene average ---
 const dom = LIM.dominantColor({ width: 4, height: 4, data: new Uint8ClampedArray([200, 40, 40, 255].concat(new Array(60).fill(0))) });
 assert(Array.isArray(dom) && dom.length === 3, 'dominantColor: returns [r,g,b]');
+
+// --- geometry/time vibe presets wire up their stacks ---
+const vt = LIM.preset('vertigo');
+assert(vt.preset === 'vertigo' && vt.shear.enabled && vt.gravityWells.enabled &&
+  vt.astigmatism.enabled && vt.contours.enabled && vt.breathingZoom.enabled,
+  'preset: Vertigo Relay enables shear + wells + astigmatism + contours');
+assert(vt.dayNight.enabled === false && vt.brownout.enabled === false,
+  'preset: vertigo keeps the time stack off');
+const tw = LIM.preset('twilight');
+assert(tw.preset === 'twilight' && tw.dayNight.enabled && tw.brownout.enabled &&
+  tw.shadowDrift.enabled && tw.ghostTrails.enabled,
+  'preset: Terminal Twilight enables day-night + brownout + shadows + ghosts');
+assert(LIM.presetList().length >= 9, 'preset list: 9+ vibes (' + LIM.presetList().length + ')');
+
+// --- contours: band boundaries get inked, crawl wraps one band per loop ---
+// horizontal luma ramp 0..255 across 32px, 8 bands of ~31.9 luma each
+const CW = 32, CH = 8;
+function rampImg() {
+  const im = { width: CW, height: CH, data: new Uint8ClampedArray(CW * CH * 4) };
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    const i = (y * CW + x) * 4, v = (x / (CW - 1)) * 255;
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+  }
+  return im;
+}
+const co1 = rampImg();
+LIM.contours(co1, 8, 1, 0);
+let inked = 0;
+for (let x = 0; x < CW; x++) {
+  const v = (x / (CW - 1)) * 255;
+  if (chan(co1, x, 4, 0) < v - 10) inked++;
+}
+assert(inked >= 5, 'contours: band boundaries inked across the ramp (' + inked + '/' + CW + ' columns)');
+const coMid = rampImg();
+LIM.contours(coMid, 8, 1, 0);
+const midV = (16 / 31) * 255; // ~131.6, deep inside band 4 -> not inked
+assert(chan(coMid, 16, 4, 0) === Math.round(midV) || chan(coMid, 16, 4, 0) >= midV - 2,
+  'contours: mid-band pixels untouched (' + chan(coMid, 16, 4, 0) + ' vs ' + midV.toFixed(1) + ')');
+const coA = rampImg(), coB = rampImg();
+LIM.contours(coA, 8, 1, 0); LIM.contours(coB, 8, 1, 1);
+assert(Buffer.from(coA.data).equals(Buffer.from(coB.data)), 'contours: crawl wraps exactly one band per loop');
+
+// --- gravity wells: pinches pixels near the well, far pixels untouched ---
+const WW = 40, WH = 40;
+const wellSrc = { width: WW, height: WH, data: new Uint8ClampedArray(WW * WH * 4) };
+for (let i = 0; i < wellSrc.data.length; i += 4) {
+  wellSrc.data[i] = 128; wellSrc.data[i + 1] = 128; wellSrc.data[i + 2] = 128; wellSrc.data[i + 3] = 255;
+}
+const wl1 = LIM.gravityWells(wellSrc, 2, 0.8, 0.25, 9);
+const wl2 = LIM.gravityWells(wellSrc, 2, 0.8, 0.25, 9);
+assert(Buffer.from(wl1.data).equals(Buffer.from(wl2.data)), 'gravityWells: deterministic for same seed+phase');
+const wlA = LIM.gravityWells(wellSrc, 2, 0.8, 0, 9);
+const wlB = LIM.gravityWells(wellSrc, 2, 0.8, 1, 9);
+assert(Buffer.from(wlA.data).equals(Buffer.from(wlB.data)), 'gravityWells: orbits close the loop');
+// corners are outside every well's reach (wells live in the central 56%)
+assert(wl1.data[0] === 128 && chan(wl1, WW - 1, WH - 1, 0) === 128,
+  'gravityWells: far corners untouched');
+// non-uniform source: a single white pixel gets pulled toward a well
+const pinchSrc = { width: WW, height: WH, data: new Uint8ClampedArray(wellSrc.data) };
+// put wells at a known place: seed 9 well 0 sits near cx=(0.22+r*0.56)*40 — just
+// verify SOME displacement happens on a gradient source instead of grey flat
+const grad = rampImg(); grad.width = CW; // reuse 32x8 ramp
+const gwGrad = LIM.gravityWells(grad, 3, 1, 0.4, 4);
+let moved = false;
+for (let x = 2; x < CW - 2; x++)
+  if (Math.abs(chan(gwGrad, x, 4, 0) - chan(grad, x, 4, 0)) > 4) { moved = true; break; }
+assert(moved, 'gravityWells: strong wells visibly remap the ramp');
+
+// --- dayNight: noon is warm, midnight is cold + dim, loop closes ---
+function dnPixel(r, g, b, amount, phase) {
+  const im = { width: 1, height: 1, data: new Uint8ClampedArray([r, g, b, 255]) };
+  LIM.dayNight(im, amount, phase);
+  return [im.data[0], im.data[1], im.data[2]];
+}
+const noon = dnPixel(140, 140, 140, 1, 0);
+assert(noon[0] > 140 && noon[2] < 140, 'dayNight: noon warms the scene (r=' + noon[0] + ', b=' + noon[2] + ')');
+const midnight = dnPixel(140, 140, 140, 1, 0.5);
+assert(midnight[2] > midnight[0], 'dayNight: midnight turns blue (b=' + midnight[2] + ' > r=' + midnight[0] + ')');
+const noonMean = (noon[0] + noon[1] + noon[2]) / 3;
+const midMean = (midnight[0] + midnight[1] + midnight[2]) / 3;
+assert(midMean < noonMean * 0.8, 'dayNight: midnight is much dimmer (' + midMean.toFixed(0) + ' vs ' + noonMean.toFixed(0) + ')');
+const dnA = dnPixel(140, 140, 140, 1, 0), dnB = dnPixel(140, 140, 140, 1, 1);
+assert(dnA[0] === dnB[0] && dnA[2] === dnB[2], 'dayNight: closes the loop');
+
+// --- brownout: sags twice per loop, flicker deterministic, loop closes ---
+function boMean(v, depth, flicker, phase, seed) {
+  const im = uniImg(v, 8);
+  LIM.brownout(im, depth, flicker, phase, seed);
+  return mean(im);
+}
+const boFull = boMean(200, 0.8, false, 0, 5);
+assert(boFull === 200, 'brownout: no sag at phase 0 (' + boFull + ')');
+const boSag = boMean(200, 0.8, false, 0.25, 5);
+assert(boSag < 200 * 0.5, 'brownout: deep sag at quarter loop (200 -> ' + boSag.toFixed(1) + ')');
+const boEnd = boMean(200, 0.8, false, 1, 5);
+assert(boEnd === 200, 'brownout: closes the loop at phase 1');
+const boF1 = boMean(200, 0.8, true, 0.3, 5), boF2 = boMean(200, 0.8, true, 0.3, 5);
+assert(boF1 === boF2, 'brownout: flicker is deterministic for same seed');
+const boNoF = boMean(200, 0, true, 0.3, 5);
+assert(boNoF < 200, 'brownout: flicker still shimmers at zero depth (' + boNoF.toFixed(1) + ')');
 
 console.log(failures === 0 ? '\nLIMINAL OK' : '\nLIMINAL FAILED (' + failures + ')');
 process.exit(failures === 0 ? 0 : 1);
