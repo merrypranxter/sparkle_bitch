@@ -5,7 +5,12 @@
  * sources, anamorphic streaks, vignette, rounded frame, breathing zoom —
  * plus mirror-lens ring bokeh, chromatic auras, ISO push grain, dying-CCD
  * stuck pixels, rolling shutter, halftone, CMYK slip, photocopy drag,
- * office fax, and a photo lab of cross-processing chemistry.
+ * office fax, a photo lab of cross-processing chemistry, geometry warps
+ * (shear, astigmatism, contours, gravity wells), time & weather loops
+ * (day-night, ghost trails, shadow drift, brownouts), OS residue (phosphor
+ * burn-in, window-drag ghosts, phantom dialogs, cursor trails) and AI
+ * hallucinations (pareidolia faces, denoise shimmer, semantic melt,
+ * latent-grid pixelation).
  *
  * Same rules as the sparkle side: every animated quantity is a pure function
  * of phase01 with integer cycles, so exported GIFs never snap at the seam.
@@ -54,7 +59,17 @@
       dayNight: { enabled: false, amount: 0.8 },
       ghostTrails: { enabled: false, taps: 3, intensity: 0.5 },
       shadowDrift: { enabled: false, opacity: 0.4, speed: 1 },
-      brownout: { enabled: false, depth: 0.5, flicker: true }
+      brownout: { enabled: false, depth: 0.5, flicker: true },
+      // os residue
+      burnIn: { enabled: false, opacity: 0.25 },
+      windowDrag: { enabled: false, count: 3, opacity: 0.4 },
+      dialogGhost: { enabled: false, opacity: 0.7 },
+      cursorTrail: { enabled: false, taps: 5, opacity: 0.5 },
+      // ai hallucinations
+      pareidolia: { enabled: false, faces: 3, intensity: 0.5 },
+      denoiseBlocks: { enabled: false, amount: 0.6, blocks: 16 },
+      semanticMelt: { enabled: false, amount: 0.5 },
+      latentGrid: { enabled: false, amount: 0.5, blocks: 24 }
     };
   }
 
@@ -159,6 +174,25 @@
       ghostTrails: { enabled: true, taps: 3, intensity: 0.55 },
       grain: { enabled: true, amount: 0.12, animated: true },
       vignette: { enabled: true, strength: 0.5, color: '#02020a' }
+    },
+    'phantom': {
+      label: '👻 Phantom Desktop',
+      burnIn: { enabled: true, opacity: 0.3 },
+      windowDrag: { enabled: true, count: 3, opacity: 0.45 },
+      dialogGhost: { enabled: true, opacity: 0.65 },
+      cursorTrail: { enabled: true, taps: 5, opacity: 0.5 },
+      scanlines: { enabled: true, density: 0.25, rgbOffset: false },
+      grain: { enabled: true, amount: 0.08, animated: true },
+      vignette: { enabled: true, strength: 0.5, color: '#050508' }
+    },
+    'latent': {
+      label: '🧠 Latent Dream',
+      pareidolia: { enabled: true, faces: 3, intensity: 0.55 },
+      denoiseBlocks: { enabled: true, amount: 0.6, blocks: 16 },
+      semanticMelt: { enabled: true, amount: 0.5 },
+      latentGrid: { enabled: true, amount: 0.45, blocks: 24 },
+      grain: { enabled: true, amount: 0.1, animated: true },
+      vignette: { enabled: true, strength: 0.5, color: '#0a0210' }
     }
   };
 
@@ -520,6 +554,96 @@
     }
     for (var i = 0; i < d.length; i += 4) {
       d[i] *= m; d[i + 1] *= m; d[i + 2] *= m;
+    }
+    return imgData;
+  }
+
+  // AI-video melt: columns droop downward like a clip regurgitated one too
+  // many times. Per-column sag is seeded and smoothed horizontally so whole
+  // sheets slump together. Runs at 40% baseline at the loop seam and swells
+  // to full melt mid-loop — identical at phase 0 and 1, so the wrap holds.
+  function semanticMelt(imgData, amount, phase01, seed) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var k = clamp(amount, 0, 1);
+    var amp = k * h * 0.15 * (0.4 + 0.6 * A.loopPing(phase01, 1));
+    if (amp < 0.5) return imgData;
+    var rnd = lcg((seed || 1) * 13 + 7);
+    var col = new Float32Array(w), x, y;
+    for (x = 0; x < w; x++) col[x] = rnd();
+    var sm = new Float32Array(w);
+    for (x = 0; x < w; x++) {
+      sm[x] = (col[Math.max(0, x - 2)] + col[Math.max(0, x - 1)] + col[x] +
+        col[Math.min(w - 1, x + 1)] + col[Math.min(w - 1, x + 2)]) / 5;
+    }
+    var src = new Uint8ClampedArray(d);
+    for (y = 0; y < h; y++) {
+      var t2 = (y / h) * (y / h); // droop accelerates toward the bottom
+      for (x = 0; x < w; x++) {
+        var dy = amp * sm[x] * t2;
+        var sy = clamp(Math.round(y - dy), 0, h - 1);
+        var si = (sy * w + x) * 4, di = (y * w + x) * 4;
+        d[di] = src[si]; d[di + 1] = src[si + 1]; d[di + 2] = src[si + 2]; d[di + 3] = src[si + 3];
+      }
+    }
+    return imgData;
+  }
+
+  // Diffusion-denoise shimmer: the frame is tiled into blocks, each one
+  // breathing static in and out on its own offset of the same loop — the
+  // model endlessly almost-resolving the image. The noise field per block is
+  // fixed per seed; only its gain moves, so calls are deterministic and the
+  // loop closes exactly.
+  function denoiseBlocks(imgData, amount, blocks, phase01, seed) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var k = clamp(amount, 0, 1);
+    if (k <= 0) return imgData;
+    var nb = clamp(Math.round(blocks), 4, 64);
+    var bw = Math.ceil(w / nb), bh = Math.ceil(h / nb);
+    for (var by = 0; by * bh < h; by++) {
+      for (var bx = 0; bx * bw < w; bx++) {
+        var off = lcg((seed || 1) * 7 + bx * 131 + by * 17)(); // block loop offset
+        var n = A.loopPing((phase01 + off) % 1, 1);
+        if (n < 0.03) continue;
+        var rnd = lcg((seed || 1) * 31 + bx * 911 + by * 37 + 5);
+        var gain = 90 * k * n;
+        var x1 = Math.min(w, bx * bw + bw), y1 = Math.min(h, by * bh + bh);
+        for (var y = by * bh; y < y1; y++) {
+          for (var x = bx * bw; x < x1; x++) {
+            var i = (y * w + x) * 4;
+            var v = (rnd() - 0.5) * gain;
+            var v2 = (rnd() - 0.5) * gain * 0.6;
+            d[i] = clamp(d[i] + v, 0, 255);
+            d[i + 1] = clamp(d[i + 1] + v2, 0, 255);
+            d[i + 2] = clamp(d[i + 2] + v - v2, 0, 255);
+          }
+        }
+      }
+    }
+    return imgData;
+  }
+
+  // Latent-space pixelation: the frame keeps collapsing into a coarse mosaic
+  // and re-resolving, like watching a diffusion model think out loud. Block
+  // size is a pure function of phase01 (same at 0 and 1) — seamless wrap.
+  function latentGrid(imgData, amount, blocks, phase01) {
+    var w = imgData.width, h = imgData.height, d = imgData.data;
+    var k = clamp(amount, 0, 1);
+    var nb = clamp(Math.round(blocks), 4, 96);
+    var maxBlock = Math.max(2, Math.round(Math.min(w, h) / nb));
+    var s = 1 + Math.round((maxBlock - 1) * k * (0.5 + 0.5 * A.loopPing(phase01, 1)));
+    if (s <= 1) return imgData;
+    for (var by = 0; by < h; by += s) {
+      for (var bx = 0; bx < w; bx += s) {
+        var x1 = Math.min(w, bx + s), y1 = Math.min(h, by + s);
+        var r = 0, g = 0, b = 0, n = 0, x, y, i;
+        for (y = by; y < y1; y++) for (x = bx; x < x1; x++) {
+          i = (y * w + x) * 4; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+        }
+        r /= n; g /= n; b /= n;
+        for (y = by; y < y1; y++) for (x = bx; x < x1; x++) {
+          i = (y * w + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b;
+        }
+      }
     }
     return imgData;
   }
@@ -901,6 +1025,159 @@
     ctx.restore();
   }
 
+  // ---- OS residue --------------------------------------------------------
+  // Phosphor burn-in: a phantom desktop (menu bar, taskbar, one dead window,
+  // a column of icons, a clock) etched into the frame and faintly breathing
+  // (two breaths per loop).
+  function burnIn(ctx, w, h, params, phase01) {
+    var o = clamp(params.opacity, 0, 1) * (0.75 + 0.25 * A.loopSin(phase01, 1, 0, 2));
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(190,200,215,' + (o * 0.55).toFixed(3) + ')';
+    ctx.fillStyle = 'rgba(190,200,215,' + (o * 0.30).toFixed(3) + ')';
+    var mb = Math.max(6, h * 0.045), tb = Math.max(8, h * 0.06);
+    ctx.fillRect(0, 0, w, mb);          // menu bar
+    ctx.fillRect(0, h - tb, w, tb);     // taskbar
+    var ww = w * 0.46, wh = h * 0.42, wx = w * 0.31, wy = h * 0.24;
+    ctx.strokeRect(wx, wy, ww, wh);     // dead window
+    ctx.fillRect(wx, wy, ww, Math.max(5, h * 0.035));
+    var is = Math.max(6, h * 0.06);     // icon column
+    for (var i = 0; i < 4; i++) ctx.strokeRect(w * 0.03, mb + h * 0.03 + i * (is + h * 0.035), is, is);
+    ctx.strokeRect(w * 0.94, h - tb + 2, w * 0.04, tb - 4); // clock
+    ctx.restore();
+  }
+
+  // Window-drag ghosts: translucent windows trailing along a closed
+  // Lissajous path (1 and 2 cycles per loop), like an XP drag with "show
+  // window contents while dragging" switched off.
+  function windowDrag(ctx, w, h, params, phase01, still, seed) {
+    var n = clamp(Math.round(params.count), 1, 5);
+    var rnd = lcg((seed || 1) * 19 + 11);
+    var ww = w * (0.30 + rnd() * 0.1), wh = h * (0.28 + rnd() * 0.1);
+    var titleH = Math.max(5, h * 0.045);
+    ctx.save();
+    for (var k = n - 1; k >= 0; k--) {
+      var t = still ? 0.35 : (phase01 + k / (n + 1)) % 1;
+      var cx = w * 0.5 + w * 0.16 * Math.sin(2 * Math.PI * t);
+      var cy = h * 0.48 + h * 0.13 * Math.sin(2 * Math.PI * 2 * t + 1.3);
+      var a = clamp(params.opacity, 0, 1) * (1 - k / (n + 1));
+      ctx.lineWidth = 1;
+      ctx.fillStyle = 'rgba(206,212,222,' + (a * 0.35).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(30,34,48,' + (a * 0.8).toFixed(3) + ')';
+      ctx.fillRect(cx - ww / 2, cy - wh / 2, ww, wh);
+      ctx.strokeRect(cx - ww / 2, cy - wh / 2, ww, wh);
+      ctx.fillStyle = 'rgba(16,40,110,' + (a * 0.55).toFixed(3) + ')';
+      ctx.fillRect(cx - ww / 2, cy - wh / 2, ww, titleH);
+    }
+    ctx.restore();
+  }
+
+  // Phantom error dialog: a modal whose message never loaded, fading in and
+  // out once per loop over a dimmed desktop. Never reaches full zero — the
+  // machine wants you to know it's still there.
+  function dialogGhost(ctx, w, h, params, phase01) {
+    var o = clamp(params.opacity, 0, 1) * (0.55 + 0.45 * A.loopPing(phase01, 1));
+    var dw = w * 0.42, dh = h * 0.30, dx = (w - dw) / 2, dy = (h - dh) / 2 - h * 0.03;
+    var titleH = Math.max(5, h * 0.05);
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,4,10,' + (o * 0.30).toFixed(3) + ')';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(212,208,200,' + (o * 0.92).toFixed(3) + ')';
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.fillStyle = 'rgba(10,36,106,' + (o * 0.95).toFixed(3) + ')';
+    ctx.fillRect(dx, dy, dw, titleH);
+    ctx.fillStyle = 'rgba(40,40,46,' + (o * 0.7).toFixed(3) + ')';
+    var ly = dy + titleH + dh * 0.22, lh = Math.max(2, h * 0.014);
+    ctx.fillRect(dx + dw * 0.24, ly, dw * 0.6, lh);          // faux message
+    ctx.fillRect(dx + dw * 0.24, ly + dh * 0.18, dw * 0.45, lh);
+    var br = Math.min(dw, dh) * 0.11, bx = dx + dw * 0.12, byc = ly + dh * 0.08;
+    ctx.strokeStyle = 'rgba(120,30,30,' + (o * 0.8).toFixed(3) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(bx, byc, br, 0, 2 * Math.PI); ctx.stroke();
+    ctx.fillStyle = 'rgba(120,30,30,' + (o * 0.8).toFixed(3) + ')';
+    ctx.fillRect(bx - 1, byc - br * 0.55, 2, br * 0.7);      // "!"
+    ctx.fillRect(bx - 1, byc + br * 0.35, 2, 2);
+    var bw2 = dw * 0.26, bh2 = dh * 0.16, by2 = dy + dh * 0.72;
+    ctx.fillStyle = 'rgba(190,186,178,' + (o * 0.95).toFixed(3) + ')';
+    ctx.strokeStyle = 'rgba(30,30,34,' + (o * 0.9).toFixed(3) + ')';
+    ctx.lineWidth = 1;
+    ctx.fillRect(dx + dw * 0.18, by2, bw2, bh2);
+    ctx.strokeRect(dx + dw * 0.18, by2, bw2, bh2);
+    ctx.fillRect(dx + dw * 0.56, by2, bw2, bh2);
+    ctx.strokeRect(dx + dw * 0.56, by2, bw2, bh2);
+    ctx.restore();
+  }
+
+  // Cursor trail: a lone pointer gliding a closed Lissajous path, leaving
+  // afterimages — somebody is still using this machine.
+  function cursorTrail(ctx, w, h, params, phase01, still) {
+    var taps = clamp(Math.round(params.taps), 2, 8);
+    var s = h * 0.085;
+    ctx.save();
+    for (var k = taps - 1; k >= 0; k--) {
+      var t = still ? 0.35 : (phase01 - k / (taps * 3) + 1) % 1;
+      var cx = w * 0.5 + w * 0.30 * Math.sin(2 * Math.PI * t);
+      var cy = h * 0.5 + h * 0.22 * Math.sin(2 * Math.PI * 2 * t + 2.1);
+      ctx.globalAlpha = clamp(params.opacity, 0, 1) * (1 - k / (taps + 1));
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, cy + s);
+      ctx.lineTo(cx + s * 0.28, cy + s * 0.76);
+      ctx.lineTo(cx + s * 0.44, cy + s * 1.06);
+      ctx.lineTo(cx + s * 0.58, cy + s * 1.0);
+      ctx.lineTo(cx + s * 0.44, cy + s * 0.72);
+      ctx.lineTo(cx + s * 0.72, cy + s * 0.72);
+      ctx.closePath();
+      ctx.fillStyle = '#e8ecf2';
+      ctx.strokeStyle = 'rgba(10,10,16,0.9)';
+      ctx.lineWidth = 1;
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- AI hallucinations -------------------------------------------------
+  // Pareidolia: the model keeps finding faces. Seeded ghost-faces — two
+  // hollow eyes, a slack mouth — fading in and out on their own offsets of
+  // the loop. Pure function of (phase01 + face offset): seamless.
+  function pareidolia(ctx, w, h, params, phase01, still, seed) {
+    var n = clamp(Math.round(params.faces), 1, 6);
+    var rnd = lcg((seed || 1) * 17 + 5);
+    var mn = Math.min(w, h);
+    ctx.save();
+    for (var i = 0; i < n; i++) {
+      var cx = (0.18 + rnd() * 0.64) * w;
+      var cy = (0.18 + rnd() * 0.64) * h;
+      var R = (0.07 + rnd() * 0.09) * mn;
+      var ph = rnd(), tilt = (rnd() - 0.5) * 0.5;
+      var a = clamp(params.intensity, 0, 1) *
+        (still ? 0.55 : A.loopPing((phase01 + ph) % 1, 1));
+      if (a < 0.02) continue;
+      ctx.save();
+      ctx.translate(cx, cy); ctx.rotate(tilt);
+      for (var e = -1; e <= 1; e += 2) {
+        var g = ctx.createRadialGradient(e * R * 0.42, -R * 0.18, 0, e * R * 0.42, -R * 0.18, R * 0.34);
+        g.addColorStop(0, 'rgba(8,6,14,' + (a * 0.55).toFixed(3) + ')');
+        g.addColorStop(0.75, 'rgba(8,6,14,' + (a * 0.30).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(8,6,14,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(e * R * 0.42, -R * 0.18, R * 0.30, R * 0.34, 0, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      var g2 = ctx.createRadialGradient(0, R * 0.42, 0, 0, R * 0.42, R * 0.36);
+      g2.addColorStop(0, 'rgba(8,6,14,' + (a * 0.45).toFixed(3) + ')');
+      g2.addColorStop(1, 'rgba(8,6,14,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.ellipse(0, R * 0.42, R * 0.30, R * 0.36, 0, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   // ------------------------------------------------------------- the stack
   /**
    * Composite one liminal frame.
@@ -934,11 +1211,15 @@
       p.isoGrain.enabled || p.halftone.enabled || p.cmyk.enabled ||
       p.fax.enabled || p.photoLab.enabled || p.stuckPixels.enabled ||
       p.contours.enabled || p.gravityWells.enabled || p.dayNight.enabled ||
-      p.brownout.enabled;
+      p.brownout.enabled || p.semanticMelt.enabled || p.denoiseBlocks.enabled ||
+      p.latentGrid.enabled;
     if (needPixels) {
       var imgData = ctx.getImageData(0, 0, W, H);
       if (p.gravityWells.enabled) {
         imgData = gravityWells(imgData, p.gravityWells.count, p.gravityWells.strength, phase01, seed || 1);
+      }
+      if (p.semanticMelt.enabled) {
+        imgData = semanticMelt(imgData, p.semanticMelt.amount, phase01, seed || 1);
       }
       if (p.chromaticAberration.enabled) {
         imgData = chromaticAberration(imgData, p.chromaticAberration.amount, p.chromaticAberration.mode);
@@ -953,6 +1234,10 @@
       if (p.halftone.enabled) imgData = halftone(imgData, p.halftone.cell, p.halftone.amount, phase01);
       if (p.isoGrain.enabled) imgData = isoGrain(imgData, p.isoGrain.amount, phase01, seed || 1);
       if (p.stuckPixels.enabled) imgData = stuckPixels(imgData, p.stuckPixels.count, p.stuckPixels.columns, phase01, seed || 1);
+      if (p.denoiseBlocks.enabled) {
+        imgData = denoiseBlocks(imgData, p.denoiseBlocks.amount, p.denoiseBlocks.blocks, phase01, seed || 1);
+      }
+      if (p.latentGrid.enabled) imgData = latentGrid(imgData, p.latentGrid.amount, p.latentGrid.blocks, phase01);
       ctx.putImageData(imgData, 0, 0);
     }
 
@@ -983,6 +1268,13 @@
     }
     if (p.ghostTrails.enabled) ghostTrails(ctx, W, H, base, p.ghostTrails, phase01, still);
 
+    // 5b. OS residue + AI hallucinations (drawn over the haunted frame)
+    if (p.burnIn.enabled) burnIn(ctx, W, H, p.burnIn, phase01);
+    if (p.pareidolia.enabled) pareidolia(ctx, W, H, p.pareidolia, phase01, still, seed || 1);
+    if (p.windowDrag.enabled) windowDrag(ctx, W, H, p.windowDrag, phase01, still, seed || 1);
+    if (p.dialogGhost.enabled) dialogGhost(ctx, W, H, p.dialogGhost, phase01);
+    if (p.cursorTrail.enabled) cursorTrail(ctx, W, H, p.cursorTrail, phase01, still);
+
     // 6. frame
     if (p.roundedFrame.enabled) roundedFrame(ctx, W, H, p.roundedFrame);
   }
@@ -1009,7 +1301,10 @@
     contours: contours,
     gravityWells: gravityWells,
     dayNight: dayNight,
-    brownout: brownout
+    brownout: brownout,
+    semanticMelt: semanticMelt,
+    denoiseBlocks: denoiseBlocks,
+    latentGrid: latentGrid
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SB;
