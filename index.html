@@ -378,6 +378,48 @@
         </details>
 
         <details class="group lim-details">
+          <summary>OS residue</summary>
+          <label class="ctl check"><input type="checkbox" id="limBurnOn" data-lim="burnIn.enabled" /> Phosphor burn-in</label>
+          <label class="ctl"><span>Ghost opacity <b data-label-for="limBurnOpacity"></b></span>
+            <input id="limBurnOpacity" type="range" min="0" max="0.6" step="0.05" data-lim="burnIn.opacity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limWinOn" data-lim="windowDrag.enabled" /> Window-drag ghosts</label>
+          <label class="ctl"><span>Window count <b data-label-for="limWinCount"></b></span>
+            <input id="limWinCount" type="range" min="1" max="5" step="1" data-lim="windowDrag.count" /></label>
+          <label class="ctl"><span>Window opacity <b data-label-for="limWinOpacity"></b></span>
+            <input id="limWinOpacity" type="range" min="0" max="0.8" step="0.05" data-lim="windowDrag.opacity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limDlgOn" data-lim="dialogGhost.enabled" /> Phantom dialog</label>
+          <label class="ctl"><span>Dialog opacity <b data-label-for="limDlgOpacity"></b></span>
+            <input id="limDlgOpacity" type="range" min="0" max="1" step="0.05" data-lim="dialogGhost.opacity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limCursorOn" data-lim="cursorTrail.enabled" /> Cursor afterimages</label>
+          <label class="ctl"><span>Trail length <b data-label-for="limCursorTaps"></b></span>
+            <input id="limCursorTaps" type="range" min="2" max="8" step="1" data-lim="cursorTrail.taps" /></label>
+          <label class="ctl"><span>Trail opacity <b data-label-for="limCursorOpacity"></b></span>
+            <input id="limCursorOpacity" type="range" min="0" max="0.8" step="0.05" data-lim="cursorTrail.opacity" /></label>
+        </details>
+
+        <details class="group lim-details">
+          <summary>AI hallucinations</summary>
+          <label class="ctl check"><input type="checkbox" id="limFaceOn" data-lim="pareidolia.enabled" /> Pareidolia faces</label>
+          <label class="ctl"><span>Face count <b data-label-for="limFaceCount"></b></span>
+            <input id="limFaceCount" type="range" min="1" max="6" step="1" data-lim="pareidolia.faces" /></label>
+          <label class="ctl"><span>Face intensity <b data-label-for="limFaceIntensity"></b></span>
+            <input id="limFaceIntensity" type="range" min="0" max="1" step="0.05" data-lim="pareidolia.intensity" /></label>
+          <label class="ctl check"><input type="checkbox" id="limDenoiseOn" data-lim="denoiseBlocks.enabled" /> Denoise shimmer</label>
+          <label class="ctl"><span>Static amount <b data-label-for="limDenoiseAmount"></b></span>
+            <input id="limDenoiseAmount" type="range" min="0" max="1" step="0.05" data-lim="denoiseBlocks.amount" /></label>
+          <label class="ctl"><span>Block grid <b data-label-for="limDenoiseBlocks"></b></span>
+            <input id="limDenoiseBlocks" type="range" min="8" max="32" step="4" data-lim="denoiseBlocks.blocks" /></label>
+          <label class="ctl check"><input type="checkbox" id="limMeltOn" data-lim="semanticMelt.enabled" /> Semantic melt</label>
+          <label class="ctl"><span>Melt amount <b data-label-for="limMeltAmount"></b></span>
+            <input id="limMeltAmount" type="range" min="0" max="1" step="0.05" data-lim="semanticMelt.amount" /></label>
+          <label class="ctl check"><input type="checkbox" id="limLatentOn" data-lim="latentGrid.enabled" /> Latent pixelation</label>
+          <label class="ctl"><span>Collapse depth <b data-label-for="limLatentAmount"></b></span>
+            <input id="limLatentAmount" type="range" min="0" max="1" step="0.05" data-lim="latentGrid.amount" /></label>
+          <label class="ctl"><span>Mosaic grid <b data-label-for="limLatentBlocks"></b></span>
+            <input id="limLatentBlocks" type="range" min="8" max="48" step="4" data-lim="latentGrid.blocks" /></label>
+        </details>
+
+        <details class="group lim-details">
           <summary>Frame &amp; motion</summary>
           <label class="ctl check"><input type="checkbox" id="limRoundOn" data-lim="roundedFrame.enabled" /> Rounded frame</label>
           <label class="ctl"><span>Corner radius <b data-label-for="limRoundRadius"></b></span>

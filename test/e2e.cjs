@@ -839,6 +839,60 @@ async function poll(page, fn, timeout, label) {
     ok(lim3.customAfter, 'liminal: reset returns to a custom stack');
     ok(lim3.gifFrames > 1, 'liminal: geometry+time stack exports GIF (' + lim3.gifFrames + ' frames)');
 
+    // ---- LIMINAL OS RESIDUE + AI HALLUCINATIONS ----
+    const lim4 = await page.evaluate(async () => {
+      var SBM = window.SparkleBitch, out = {};
+      function meanDiff(a, b) {
+        var da = a.getContext('2d').getImageData(0, 0, a.width, a.height).data;
+        var db = b.getContext('2d').getImageData(0, 0, b.width, b.height).data;
+        var m = 0, n = 0;
+        for (var i = 0; i < da.length; i += 4) {
+          m += Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2]); n += 3;
+        }
+        return m / n;
+      }
+      function frameDiff(a, b) {
+        var m = 0, n = 0;
+        for (var i = 0; i < a.data.length; i += 4) {
+          m += Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1]) + Math.abs(a.data[i + 2] - b.data[i + 2]); n += 3;
+        }
+        return m / n;
+      }
+      SBM.applyLiminalPreset('');                            // all effects off
+      var base = SBM.renderStillCanvas();
+      // Phantom Desktop: burn-in + windows + dialog + cursor haunt the still
+      SBM.applyLiminalPreset('phantom');
+      out.presetP = SBM.state.liminal.preset === 'phantom' &&
+        SBM.state.liminal.burnIn.enabled && SBM.state.liminal.windowDrag.enabled &&
+        SBM.state.liminal.dialogGhost.enabled && SBM.state.liminal.cursorTrail.enabled;
+      out.diffP = meanDiff(base, SBM.renderStillCanvas());
+      // Latent Dream: faces + denoise + melt + pixelation rework the still
+      SBM.applyLiminalPreset('latent');
+      out.presetL = SBM.state.liminal.preset === 'latent' &&
+        SBM.state.liminal.pareidolia.enabled && SBM.state.liminal.denoiseBlocks.enabled &&
+        SBM.state.liminal.semanticMelt.enabled && SBM.state.liminal.latentGrid.enabled;
+      out.diffL = meanDiff(base, SBM.renderStillCanvas());
+      // the dream keeps re-resolving: mid-loop GIF frame differs from frame 0
+      var u8 = new Uint8Array(await SBM.exportGifBytes());
+      var gif = SB.decodeGIF(u8);
+      out.gifFrames = gif.frames.length;
+      out.fDiff = frameDiff(gif.frames[0], gif.frames[Math.floor(gif.frames.length / 2)]);
+      out.chips = document.querySelectorAll('#limPresets .chip').length;
+      // back to a custom stack so the persistence asserts below stay valid
+      SBM.applyLiminalPreset('');
+      SBM.setLiminal('scanlines.enabled', true);
+      out.customAfter = SBM.state.liminal.preset === '' && SBM.state.liminal.scanlines.enabled === true;
+      return out;
+    });
+    ok(lim4.presetP, 'liminal: Phantom Desktop chip applies its stack');
+    ok(lim4.diffP > 6, 'liminal: phantom desktop haunts the still (mean diff ' + lim4.diffP.toFixed(1) + ')');
+    ok(lim4.presetL, 'liminal: Latent Dream chip applies its stack');
+    ok(lim4.diffL > 6, 'liminal: latent dream reworks the still (mean diff ' + lim4.diffL.toFixed(1) + ')');
+    ok(lim4.fDiff > 3, 'liminal: latent GIF re-resolves mid-loop (frame diff ' + lim4.fDiff.toFixed(1) + ')');
+    ok(lim4.chips >= 11, 'liminal: all vibe chips rendered (' + lim4.chips + ')');
+    ok(lim4.customAfter, 'liminal: reset returns to a custom stack');
+    ok(lim4.gifFrames > 1, 'liminal: os+ai stack exports GIF (' + lim4.gifFrames + ' frames)');
+
     // ---- new multi-colour glitter styles ----
     const styles = await page.evaluate(() => SB.glitter.styleList().map(function (s) { return s.id; }));
     ok(styles.indexOf('neon') >= 0, 'glitter: "All Neon" style present');

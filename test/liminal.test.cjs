@@ -20,7 +20,9 @@ const sections = ['breathingZoom', 'scanlines', 'moire', 'chromaticAberration', 
   'ringBokeh', 'chromaAura', 'isoGrain', 'stuckPixels', 'rollingShutter', 'halftone', 'cmyk',
   'photocopy', 'fax', 'photoLab',
   'shear', 'astigmatism', 'contours', 'gravityWells',
-  'dayNight', 'ghostTrails', 'shadowDrift', 'brownout'];
+  'dayNight', 'ghostTrails', 'shadowDrift', 'brownout',
+  'burnIn', 'windowDrag', 'dialogGhost', 'cursorTrail',
+  'pareidolia', 'denoiseBlocks', 'semanticMelt', 'latentGrid'];
 assert(sections.every(k => d0[k] && d0[k].enabled === false), 'defaults: all effects off');
 assert(d0.preset === '', 'defaults: no preset selected');
 
@@ -340,6 +342,80 @@ const boF1 = boMean(200, 0.8, true, 0.3, 5), boF2 = boMean(200, 0.8, true, 0.3, 
 assert(boF1 === boF2, 'brownout: flicker is deterministic for same seed');
 const boNoF = boMean(200, 0, true, 0.3, 5);
 assert(boNoF < 200, 'brownout: flicker still shimmers at zero depth (' + boNoF.toFixed(1) + ')');
+
+// --- os residue + ai hallucination vibe presets wire up their stacks ---
+const ph = LIM.preset('phantom');
+assert(ph.preset === 'phantom' && ph.burnIn.enabled && ph.windowDrag.enabled &&
+  ph.dialogGhost.enabled && ph.cursorTrail.enabled,
+  'preset: Phantom Desktop enables burn-in + windows + dialog + cursor');
+assert(ph.pareidolia.enabled === false && ph.semanticMelt.enabled === false,
+  'preset: phantom keeps the hallucination stack off');
+const la = LIM.preset('latent');
+assert(la.preset === 'latent' && la.pareidolia.enabled && la.denoiseBlocks.enabled &&
+  la.semanticMelt.enabled && la.latentGrid.enabled,
+  'preset: Latent Dream enables faces + denoise + melt + pixelation');
+assert(LIM.presetList().length >= 11, 'preset list: 11+ vibes (' + LIM.presetList().length + ')');
+
+// --- semanticMelt: columns droop downward, deterministic, loop closes ---
+// vertical gradient (luma rises with y): a downward droop darkens the bottom
+function vGradImg(w, h) {
+  const im = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, v = Math.round((y / (h - 1)) * 240);
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+  }
+  return im;
+}
+function bandMean(im, y0, y1) {
+  let s = 0, n = 0;
+  for (let y = y0; y < y1; y++) for (let x = 0; x < im.width; x++) { s += im.data[(y * im.width + x) * 4]; n++; }
+  return s / n;
+}
+const melt0 = vGradImg(8, 40), meltMid = vGradImg(8, 40);
+LIM.semanticMelt(meltMid, 1, 0.5, 11);
+const meltBotBefore = bandMean(melt0, 30, 40), meltBotAfter = bandMean(meltMid, 30, 40);
+assert(meltBotAfter < meltBotBefore - 5,
+  'semanticMelt: bottom rows droop darker (' + meltBotBefore.toFixed(1) + ' -> ' + meltBotAfter.toFixed(1) + ')');
+const meltTopBefore = bandMean(melt0, 0, 6), meltTopAfter = bandMean(meltMid, 0, 6);
+assert(Math.abs(meltTopAfter - meltTopBefore) < 2,
+  'semanticMelt: top rows barely move (' + meltTopBefore.toFixed(1) + ' -> ' + meltTopAfter.toFixed(1) + ')');
+const meltD1 = vGradImg(8, 40), meltD2 = vGradImg(8, 40);
+LIM.semanticMelt(meltD1, 1, 0.5, 11); LIM.semanticMelt(meltD2, 1, 0.5, 11);
+assert(Buffer.from(meltD1.data).equals(Buffer.from(meltD2.data)), 'semanticMelt: deterministic for same seed');
+const meltA = vGradImg(8, 40), meltB = vGradImg(8, 40);
+LIM.semanticMelt(meltA, 1, 0, 11); LIM.semanticMelt(meltB, 1, 1, 11);
+assert(Buffer.from(meltA.data).equals(Buffer.from(meltB.data)), 'semanticMelt: closes the loop');
+const meltOff = vGradImg(8, 40);
+LIM.semanticMelt(meltOff, 0, 0.5, 11);
+assert(bandMean(meltOff, 30, 40) === meltBotBefore, 'semanticMelt: amount 0 leaves the frame alone');
+
+// --- denoiseBlocks: blocks breathe static, deterministic, loop closes ---
+const dn0a = uniImg(128, 16), dn0b = uniImg(128, 16);
+LIM.denoiseBlocks(dn0a, 1, 8, 0, 7); LIM.denoiseBlocks(dn0b, 1, 8, 1, 7);
+assert(Buffer.from(dn0a.data).equals(Buffer.from(dn0b.data)), 'denoiseBlocks: closes the loop');
+const dnMa = uniImg(128, 16), dnMb = uniImg(128, 16);
+LIM.denoiseBlocks(dnMa, 1, 8, 0.5, 7); LIM.denoiseBlocks(dnMb, 1, 8, 0.5, 7);
+assert(Buffer.from(dnMa.data).equals(Buffer.from(dnMb.data)), 'denoiseBlocks: deterministic for same seed');
+let dnDiff = 0;
+for (let i = 0; i < dnMa.data.length; i += 4) dnDiff += Math.abs(dnMa.data[i] - 128);
+dnDiff /= (dnMa.data.length / 4);
+assert(dnDiff > 3, 'denoiseBlocks: static shimmers mid-loop (mean |delta| ' + dnDiff.toFixed(1) + ')');
+const dnOff = uniImg(128, 16);
+LIM.denoiseBlocks(dnOff, 0, 8, 0.5, 7);
+assert(mean(dnOff) === 128, 'denoiseBlocks: amount 0 leaves the frame alone');
+
+// --- latentGrid: mosaic cells share colour, collapses are loop-sealed ---
+const lg0a = vGradImg(32, 32), lg0b = vGradImg(32, 32);
+LIM.latentGrid(lg0a, 1, 16, 0); LIM.latentGrid(lg0b, 1, 16, 1);
+assert(Buffer.from(lg0a.data).equals(Buffer.from(lg0b.data)), 'latentGrid: closes the loop');
+const lgMid = vGradImg(32, 32);
+LIM.latentGrid(lgMid, 1, 16, 0.5);
+assert(chan(lgMid, 0, 0, 0) === chan(lgMid, 1, 0, 0) && chan(lgMid, 5, 3, 0) === chan(lgMid, 4, 3, 0),
+  'latentGrid: neighbours collapse into shared mosaic cells');
+const lgOff = vGradImg(32, 32);
+LIM.latentGrid(lgOff, 0, 16, 0.5);
+assert(Buffer.from(lgOff.data).equals(Buffer.from(vGradImg(32, 32).data)),
+  'latentGrid: amount 0 leaves the frame alone');
 
 console.log(failures === 0 ? '\nLIMINAL OK' : '\nLIMINAL FAILED (' + failures + ')');
 process.exit(failures === 0 ? 0 : 1);
