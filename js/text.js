@@ -137,12 +137,12 @@
   function normOutlines(o) {
     if (o.outlines && o.outlines.length) {
       return o.outlines.filter(function (l) { return l && l.width > 0; }).map(function (l) {
-        var kind = (l.kind === 'glitter' || l.kind === 'texture') ? l.kind : 'color';
+        var kind = (l.kind === 'glitter' || l.kind === 'texture' || l.kind === 'finish') ? l.kind : 'color';
         // per-outline glitter overrides (density/grain/intensity) pass through as
         // given; render.js falls back to the global fill values when they're unset.
         return { width: l.width, kind: kind,
                  color: l.color || '#000000', glitter: l.glitter || 'silver',
-                 textureId: l.textureId || null,
+                 textureId: l.textureId || null, finish: l.finish || null,
                  density: l.density, grain: l.grain, intensity: l.intensity };
       });
     }
@@ -225,7 +225,7 @@
       eachLine(lc, function (line, x, y) { drawLine(lc, line, x, y, true); });
       eachLine(lc, function (line, x, y) { drawLine(lc, line, x, y, false); });
       layers.push({ mask: lm, kind: outlines[k].kind, color: outlines[k].color, glitter: outlines[k].glitter,
-                    textureId: outlines[k].textureId, density: outlines[k].density,
+                    textureId: outlines[k].textureId, finish: outlines[k].finish, density: outlines[k].density,
                     grain: outlines[k].grain, intensity: outlines[k].intensity });
     }
 

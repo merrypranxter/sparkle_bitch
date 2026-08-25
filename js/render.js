@@ -137,7 +137,9 @@
     var layers = tr.layers || [];
     for (var k = layers.length - 1; k >= 0; k--) {
       var L = layers[k];
-      if (L.kind === 'texture' && L.texture) {
+      if (L.kind === 'finish' && L.finish && SB.finishes) {
+        SB.finishes.renderStack(ctx, [L.finish], L.mask, phase01, still, params.seed);
+      } else if (L.kind === 'texture' && L.texture) {
         paintTextureMasked(ctx, L.texture, L.mask, phase01, still, L.intensity != null ? L.intensity : fillAlpha);
       } else if (L.kind === 'glitter') {
         var d = L.density != null ? L.density : params.glitterDensity;
@@ -151,6 +153,10 @@
     // the letter fill, on top: an uploaded texture if set, else the glitter field
     if (opts.fillTexture) paintTextureMasked(ctx, opts.fillTexture, tr.maskCanvas, phase01, still, fillAlpha);
     else if (mainField) paintGlitterMasked(ctx, mainField, tr.maskCanvas, phase01, still, fillAlpha);
+    // stacked reflective finishes on top of the fill (Liquid Chrome + CD + Starburst + …)
+    if (opts.finishStack && opts.finishStack.length && SB.finishes) {
+      SB.finishes.renderStack(ctx, opts.finishStack, tr.maskCanvas, phase01, still, params.seed);
+    }
   }
 
   // ---- glitter overlay on an image -------------------------------------

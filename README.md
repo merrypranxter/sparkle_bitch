@@ -14,10 +14,15 @@ modes:
   light-background and all-pink/all-blue/all-purple/all-green monochrome sets),
   on a transparent background so you can paste it anywhere. Or **fill the letters
   with your own uploaded image or GIF** — and an animated GIF's frame count
-  becomes the text's frame count (a 16-frame GIF → 16-frame text). Set
-  line-spacing AND letter-spacing, flip on ALL CAPS, and add **stackable
-  outlines** — each its own solid colour, its own glitter (with its own grain /
-  density / strength, independent of the fill), or its own uploaded image/GIF.
+  becomes the text's frame count (a 16-frame GIF → 16-frame text). Then pile on
+  reflective **finishes** — Holographic Menace, Oil-Slick, Liquid Chrome,
+  Dichroic Glass, CD-R Rainbow, Rhinestone Overdose, Lisa Frank Plasma, Opal
+  Fire, Sequins, Mother-of-Pearl, Soap Bubble, Wet Alien Jelly — and **stack
+  them** (Liquid Chrome + CD Diffraction + Holographic = a hostile reflective
+  life-form). Set line-spacing AND letter-spacing, flip on ALL CAPS, and add
+  **stackable outlines** — each its own solid colour, its own glitter (with its
+  own grain / density / strength, independent of the fill), its own uploaded
+  image/GIF, or its own reflective finish.
 
 Everything exports as a **PNG**, **animated GIF**, or **video**.
 
@@ -56,6 +61,7 @@ Then:
 | **Grain size** | (glitter styles) flake size — down to 0.2× for extra-fine glitter dust |
 | **Per-outline glitter** | Each glitter **outline** has its own density / grain / strength sliders, independent of the fill (what works for the fill rarely works for a thin outline) |
 | **＋ Upload image/GIF fill** | Use your own picture or GIF as the letter (or outline) fill; an animated GIF's frames set the text's animation length |
+| **💅 Finishes** | Stack reflective/iridescent effects on the letters — holographic, oil-slick, liquid chrome, dichroic, CD-R rainbow, rhinestones, plasma, opal, sequins, pearl, soap, jelly — reorder and blend them by opacity |
 
 **Advanced** (tucked away) adds Glitterboo-style placement tools:
 
@@ -136,6 +142,7 @@ node test/codec.test.cjs
 node test/loop.test.cjs
 node test/glitter.test.cjs   # 40 styles all loop-close (incl. red/black/yellow)
 node test/texture.test.cjs   # uploaded-GIF-fill frame picker is loop-safe
+node test/finishes.test.cjs  # the reflective finish registry + schema
 
 # everything, incl. the browser e2e (needs a Chromium)
 npm install          # dev-only: installs playwright-core (NO bundled browser)
@@ -159,7 +166,7 @@ js/anim.js      loop-closure maths   js/glitter.js    dry-glitter flake engine
 js/presets.js   Classic / Astral     js/text.js       glitter-text letterforms
 js/media.js     load img/gif/txt/tex  js/gif-encode.js GIF89a encoder (+alpha)
 js/export.js    PNG / GIF / video     js/gif-decode.js GIF decoder
-js/main.js      UI + controller
+js/main.js      UI + controller      js/finishes.js   stackable shiny finishes
 ```
 
 No third-party code — the GIF codec, detection, and rendering are all original.

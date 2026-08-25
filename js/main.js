@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   var U = SB.util, A = SB.analyze, SPK = SB.sparkles, R = SB.render,
-      MED = SB.media, EXP = SB.exporter, PRE = SB.presets, GL = SB.glitter, TXT = SB.text;
+      MED = SB.media, EXP = SB.exporter, PRE = SB.presets, GL = SB.glitter, TXT = SB.text, FIN = SB.finishes;
 
   var $ = function (id) { return document.getElementById(id); };
   var MATTE = '#0a0710';
@@ -29,6 +29,8 @@
       align: 'center', leading: 1.3, letterSpacing: 0, caps: false,
       // layered outlines, innermost first; each is a solid colour OR a glitter style
       outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }],
+      // stackable reflective finishes composited over the fill (empty = plain fill)
+      finishes: [],
       shadow: true, bg: null // null = transparent
     },
     maskCanvas: null,   // working-res canvas; painted = selected
@@ -346,6 +348,11 @@
     var og = document.createElement('optgroup'); og.label = 'Glitter';
     GL.styleList().forEach(function (s) { var o = document.createElement('option'); o.value = s.id; o.textContent = s.label; og.appendChild(o); });
     sel.appendChild(og);
+    if (FIN) {
+      var fg = document.createElement('optgroup'); fg.label = 'Finishes';
+      FIN.list().forEach(function (f) { if (f.category === 'Basic') return; var o = document.createElement('option'); o.value = 'fin:' + f.id; o.textContent = f.label; fg.appendChild(o); });
+      sel.appendChild(fg);
+    }
     var tex = textureOptions();
     if (tex.length) {
       var tg = document.createElement('optgroup'); tg.label = 'Your uploads';
@@ -365,6 +372,7 @@
   }
   // current picker value for a layer: 'color' | glitter-id | 'tex:<id>'
   function outlineTypeValue(layer) {
+    if (layer.kind === 'finish') return 'fin:' + ((layer.finish && layer.finish.type) || 'holographic');
     if (layer.kind === 'texture') return 'tex:' + layer.textureId;
     if (layer.kind === 'glitter') return layer.glitter || 'silver';
     return 'color';
@@ -406,6 +414,7 @@
         var v = ty.value;
         if (v === 'color') { layer.kind = 'color'; }
         else if (v.indexOf('tex:') === 0) { layer.kind = 'texture'; layer.textureId = v.slice(4); }
+        else if (v.indexOf('fin:') === 0) { var fid = v.slice(4); layer.kind = 'finish'; layer.finish = { type: fid, params: FIN.defaults(fid), alpha: 1 }; }
         else {
           layer.kind = 'glitter'; layer.glitter = v;
           // seed this outline's knobs from the fill so it starts sane, then tweak
@@ -435,10 +444,90 @@
     state.textOpts.outlines.push({ width: 6, kind: 'color', color: c, glitter: 'neon' });
     renderOutlineList(); if (state.mode === 'text') rebuildText();
   }
+  // ---- fill finish-stack editor ----
+  var FINCATS = ['Iridescent', 'Metal', 'Gems', 'Refraction', 'Liquid', 'Basic'];
+  function fillFinishTypeSelect(sel, current) {
+    sel.innerHTML = '';
+    var byCat = {};
+    FIN.list().forEach(function (f) { (byCat[f.category] = byCat[f.category] || []).push(f); });
+    FINCATS.forEach(function (cat) {
+      if (!byCat[cat]) return;
+      var og = document.createElement('optgroup'); og.label = cat;
+      byCat[cat].forEach(function (f) { var o = document.createElement('option'); o.value = f.id; o.textContent = f.label; og.appendChild(o); });
+      sel.appendChild(og);
+    });
+    sel.value = current;
+  }
+  // colours + mini sliders + opacity + a blend badge, generated from the schema
+  function buildFinishParams(box, def, item) {
+    box.innerHTML = '';
+    if (!item.params) item.params = FIN.defaults(item.type);   // never index undefined
+    (def.params || []).forEach(function (pr) {
+      if (pr.type === 'color') {
+        var w = document.createElement('label'); w.className = 'mini-ctl'; w.title = pr.label;
+        var s = document.createElement('span'); s.textContent = pr.label;
+        var inp = document.createElement('input'); inp.type = 'color'; inp.className = 'mini-swatch'; inp.value = item.params[pr.key] || pr.def;
+        inp.addEventListener('input', function () { item.params[pr.key] = inp.value; });
+        w.appendChild(s); w.appendChild(inp); box.appendChild(w);
+      } else if (pr.type === 'glitterStyle') {
+        var w2 = document.createElement('label'); w2.className = 'mini-ctl'; w2.title = pr.label;
+        var s2 = document.createElement('span'); s2.textContent = pr.label;
+        var gsel = document.createElement('select'); gsel.className = 'mini-select';
+        GL.styleList().forEach(function (g) { var o = document.createElement('option'); o.value = g.id; o.textContent = g.label; gsel.appendChild(o); });
+        gsel.value = item.params[pr.key] || pr.def;
+        gsel.addEventListener('change', function () { item.params[pr.key] = gsel.value; });
+        w2.appendChild(s2); w2.appendChild(gsel); box.appendChild(w2);
+      } else {
+        var ms = miniSlider(pr.label, pr.min, pr.max, pr.step, item.params[pr.key] != null ? item.params[pr.key] : pr.def, pr.label);
+        ms.input.addEventListener('input', function () { item.params[pr.key] = parseFloat(ms.input.value); });
+        box.appendChild(ms.wrap);
+      }
+    });
+    var op = miniSlider('opacity', 0.1, 1, 0.05, item.alpha != null ? item.alpha : 1, 'finish opacity (blend it into the stack)');
+    op.input.addEventListener('input', function () { item.alpha = parseFloat(op.input.value); });
+    box.appendChild(op.wrap);
+    var badge = document.createElement('span'); badge.className = 'finish-blend';
+    badge.textContent = def.blend === 'add' ? 'add' : def.blend === 'over' ? 'screen' : 'base';
+    box.appendChild(badge);
+  }
+  function renderFinishList() {
+    var box = $('finishList'); if (!box) return;
+    box.innerHTML = '';
+    var stack = state.textOpts.finishes;
+    stack.forEach(function (item, idx) {
+      var def = FIN.get(item.type) || FIN.get('holographic');
+      var it = document.createElement('div'); it.className = 'finish-item';
+      var head = document.createElement('div'); head.className = 'finish-head';
+      var ty = document.createElement('select'); fillFinishTypeSelect(ty, item.type);
+      var up = document.createElement('button'); up.className = 'btn tiny'; up.textContent = '↑'; up.title = 'move up';
+      var dn = document.createElement('button'); dn.className = 'btn tiny'; dn.textContent = '↓'; dn.title = 'move down';
+      var rm = document.createElement('button'); rm.className = 'btn tiny'; rm.textContent = '✕'; rm.title = 'remove';
+      head.appendChild(ty); head.appendChild(up); head.appendChild(dn); head.appendChild(rm);
+      it.appendChild(head);
+      var pbox = document.createElement('div'); pbox.className = 'finish-params'; it.appendChild(pbox);
+      box.appendChild(it);
+      buildFinishParams(pbox, def, item);
+      ty.addEventListener('change', function () {
+        item.type = ty.value; def = FIN.get(item.type); item.params = FIN.defaults(item.type);
+        buildFinishParams(pbox, def, item);
+      });
+      up.addEventListener('click', function () { if (idx > 0) swapFinish(idx, idx - 1); });
+      dn.addEventListener('click', function () { if (idx < stack.length - 1) swapFinish(idx, idx + 1); });
+      rm.addEventListener('click', function () { stack.splice(idx, 1); renderFinishList(); });
+    });
+  }
+  function swapFinish(i, j) { var a = state.textOpts.finishes, t = a[i]; a[i] = a[j]; a[j] = t; renderFinishList(); }
+  function addFinish() {
+    var has = state.textOpts.finishes.length;
+    state.textOpts.finishes.push({ type: 'holographic', params: FIN.defaults('holographic'), alpha: has ? 0.6 : 1 });
+    renderFinishList();
+  }
+
   function renderExtras() {
     if (state.mode === 'liminal') return { liminal: state.liminal };
     if (state.mode === 'text' && state.source && state.source.textRender) {
-      return { text: state.source.textRender, glitterField: state.glitterField, fillTexture: state.source.fillTexture || null };
+      return { text: state.source.textRender, glitterField: state.glitterField, fillTexture: state.source.fillTexture || null,
+               finishStack: state.textOpts.finishes && state.textOpts.finishes.length ? state.textOpts.finishes : null };
     }
     var o = {};
     if (state.dust) o.dust = state.dust;
@@ -974,6 +1063,7 @@
     $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
     $('textCaps').checked = !!t.caps;
     renderOutlineList();
+    renderFinishList();
     $('textShadow').checked = !!t.shadow;
     $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
     $('textBgColor').disabled = !t.bg;
@@ -1157,6 +1247,8 @@
     bindText('textAlign', 'align', 'change'); bindText('textLeading', 'leading');
     renderOutlineList();
     $('addOutlineBtn').addEventListener('click', addOutline);
+    $('addFinishBtn').addEventListener('click', addFinish);
+    renderFinishList();
     $('textTransparent').addEventListener('change', function () {
       state.textOpts.bg = $('textTransparent').checked ? null : $('textBgColor').value;
       $('textBgColor').disabled = $('textTransparent').checked;
@@ -1222,8 +1314,22 @@
       if (state.mode === 'text' && state.source && state.source.textRender) resolveTextures(state.source);
       buildDust();
     },
+    setFillStack: function (stack) {
+      state.textOpts.finishes = (stack || []).map(function (it) {
+        return { type: it.type, params: it.params || (FIN ? FIN.defaults(it.type) : {}), alpha: it.alpha != null ? it.alpha : 1 };
+      });
+      renderFinishList();
+    },
     redetect: redetect,
     renderStillCanvas: function () { return EXP.renderStill(state.source, state.instances, state.params, 640, currentMatte(), renderExtras()); },
+    // render one animated frame at an explicit phase (for loop-seam tests)
+    renderAt: function (phase) {
+      var sz = EXP.fitSize(state.source.width, state.source.height, 400);
+      var cv = document.createElement('canvas'); cv.width = sz.w; cv.height = sz.h;
+      var o = renderExtras(); o.matte = currentMatte();
+      R.render(cv.getContext('2d'), state.source.drawable, state.instances, state.params, phase, o);
+      return cv;
+    },
     exportGifBytes: function () {
       return EXP.exportGIF(state.source, state.instances, state.params,
         { maxLong: 240, matte: currentMatte(), render: renderExtras(), transparent: textTransparent(), lengthSec: 1, fps: 8 }, function () {});

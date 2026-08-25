@@ -503,6 +503,58 @@ async function poll(page, fn, timeout, label) {
     ok(texFill.delay0 === 80 && texFill.hasT, 'upload: export honours the GIF frame delays + transparency');
     ok(texFill.pickerHasUpload, 'upload: the texture appears in the Style picker');
 
+    // ---- FINISHES: stackable reflective effects on the letters ----
+    const fin = await page.evaluate(async () => {
+      var S = window.SparkleBitch, D = SB.finishes.defaults;
+      S.setMode('text');
+      S.setText({ text: 'SHINE', size: 130, font: 'arialblack', shadow: false, bg: null, outlines: [] });
+      function frame(cv) { return cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; }
+      function bright(d) { var n = 0; for (var i = 0; i < d.length; i += 4) if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 90) n++; return n; }
+      function meanDiff(a, b) { var s = 0, n = Math.min(a.length, b.length); for (var i = 0; i < n; i += 4) s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); return s / (n / 4); }
+      // a single holographic finish fills the letters
+      S.setFillStack([{ type: 'holographic', params: D('holographic'), alpha: 1 }]);
+      var holo = bright(frame(S.renderStillCanvas()));
+      // stacking a 2nd finish changes the composite
+      S.setFillStack([{ type: 'chrome', params: D('chrome'), alpha: 1 }]);
+      var chromeF = frame(S.renderAt(0));
+      S.setFillStack([{ type: 'chrome', params: D('chrome'), alpha: 1 }, { type: 'cdrom', params: D('cdrom'), alpha: 0.6 }]);
+      var stackDelta = meanDiff(chromeF, frame(S.renderAt(0)));
+      // seamless: phase 0 ≈ phase 0.998 (loop closes) for an animated finish
+      S.setFillStack([{ type: 'holographic', params: D('holographic'), alpha: 1 }]);
+      var seam = meanDiff(frame(S.renderAt(0)), frame(S.renderAt(0.998)));
+      // GIF export of a finish stack is multi-frame + transparent
+      var u8 = new Uint8Array(await S.exportGifBytes());
+      var dec = SB.decodeGIF(u8), hasT = false, f0 = dec.frames[0].data;
+      for (var i = 0; i < f0.length; i += 4) { if (f0[i + 3] < 8) { hasT = true; break; } }
+      // an OUTLINE can wear a finish too
+      S.setFillStack([]);
+      S.setText({ text: 'O', size: 150, outlines: [{ width: 20, kind: 'finish', finish: { type: 'chrome', params: D('chrome'), alpha: 1 } }] });
+      var outBright = bright(frame(S.renderStillCanvas()));
+      return { holo: holo, stackDelta: stackDelta, seam: seam, frames: dec.frames.length, hasT: hasT, outBright: outBright };
+    });
+    ok(fin.holo > 300, 'finishes: a holographic finish fills the letters (' + fin.holo + ' px)');
+    ok(fin.stackDelta > 5, 'finishes: stacking a 2nd finish changes the composite (Δ ' + fin.stackDelta.toFixed(1) + ')');
+    ok(fin.seam < 6, 'finishes: animated finish loops seamlessly (phase 0≈1 Δ ' + fin.seam.toFixed(2) + ')');
+    ok(fin.frames > 1 && fin.hasT, 'finishes: stack exports a multi-frame transparent GIF (' + fin.frames + ' frames)');
+    ok(fin.outBright > 200, 'finishes: an outline can wear a finish (' + fin.outBright + ' px)');
+
+    const finUI = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.state.textOpts.finishes = [];
+      S.setText({ text: 'UI', outlines: [{ width: 6, kind: 'color', color: '#ffffff' }] });
+      var box = document.getElementById('finishList');
+      document.getElementById('addFinishBtn').click();
+      document.getElementById('addFinishBtn').click();
+      var rows = box.querySelectorAll('.finish-item').length;
+      var typeOpts = box.querySelector('.finish-item select').querySelectorAll('option').length;
+      var outSel = document.querySelector('#outlineList select');
+      var hasFinOpt = outSel ? !!outSel.querySelector('option[value^="fin:"]') : false;
+      return { rows: rows, typeOpts: typeOpts, hasFinOpt: hasFinOpt, stackLen: S.state.textOpts.finishes.length };
+    });
+    ok(finUI.rows === 2 && finUI.stackLen === 2, 'finishes UI: Add finish builds stack rows (' + finUI.rows + ')');
+    ok(finUI.typeOpts >= 13, 'finishes UI: type picker lists the finish library (' + finUI.typeOpts + ' options)');
+    ok(finUI.hasFinOpt, 'finishes UI: outlines can pick a finish too');
+
     // ---- IMAGE PLACEMENT: detection modes / weights / trace / scatter ----
     await page.evaluate(async () => {
       var W = 240, H = 180, c = document.createElement('canvas'); c.width = W; c.height = H;
