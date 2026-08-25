@@ -205,7 +205,7 @@
     });
     if (driver) {
       src.textureFrames = driver.frames.length;
-      src.textureDelays = driver.frames.map(function (f) { return f.delay || 100; });
+      src.textureDelays = driver.frames.map(function (f) { return f.delay != null ? f.delay : 100; });
       src.textureTotalMs = src.textureDelays.reduce(function (a, b) { return a + b; }, 0);
     } else { src.textureFrames = 0; src.textureDelays = null; src.textureTotalMs = 0; }
   }

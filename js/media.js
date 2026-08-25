@@ -125,7 +125,7 @@
       return readArrayBuffer(file).then(function (buf) {
         var g = SB.decodeGIF(buf);
         var frames = g.frames.map(function (fr) {
-          return { canvas: rgbaToCanvas(fr.data, g.width, g.height), delay: fr.delay || 100 };
+          return { canvas: rgbaToCanvas(fr.data, g.width, g.height), delay: fr.delay != null ? fr.delay : 100 };
         });
         if (!frames.length) throw new Error('GIF had no frames');
         return { frames: frames, width: g.width, height: g.height, animated: frames.length > 1 };

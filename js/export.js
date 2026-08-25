@@ -152,7 +152,7 @@
       }
       // phase = k/F makes the driver texture show exactly its frame k (floor(k/F*F)=k)
       SB.render.render(ctx, source.drawable, instances, params, k / F, frameOpts({ matte: matte }, opts.render));
-      frames.push({ data: ctx.getImageData(0, 0, sz.w, sz.h).data, delay: delays[k] || 100 });
+      frames.push({ data: ctx.getImageData(0, 0, sz.w, sz.h).data, delay: delays[k] != null ? delays[k] : 100 });
       k++; onProgress((k / F) * 0.9, 'rendering');
       return nextTick().then(step);
     }
