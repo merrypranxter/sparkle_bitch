@@ -14,11 +14,16 @@ function assert(c, m) { if (!c) { failures++; console.error('  ✗ ' + m); } els
 
 const F = SB.finishes;
 const l = F.list();
-assert(l.length >= 13, 'ships the finish library (' + l.length + ' finishes)');
+assert(l.length >= 19, 'ships the finish library (' + l.length + ' finishes)');
 
-// the top-12 + chrome, under Merry's names
-['holographic', 'oilslick', 'pearl', 'soap', 'dichroic', 'plasma', 'chrome', 'liquidchrome', 'cdrom', 'jelly', 'rhinestone', 'sequin', 'opalfire']
+// the top-12 + chrome, plus the light/glitch/metal batch, under Merry's names
+['holographic', 'oilslick', 'pearl', 'soap', 'dichroic', 'plasma', 'chrome', 'liquidchrome', 'cdrom', 'jelly', 'rhinestone', 'sequin', 'opalfire',
+ 'chromatic', 'starburst', 'satin', 'neontube', 'aurora', 'anodized']
   .forEach(function (id) { assert(F.has(id), 'finish "' + id + '" present'); });
+
+// additive / edge finishes declare the blends + selfMask the compositor needs
+assert(F.get('chromatic').blend === 'add' && F.get('chromatic').selfMask === true, 'chromatic ghosting is an additive selfMask finish');
+assert(F.get('starburst').blend === 'add' && F.get('neontube').selfMask === true, 'glare adds, neon spills past the mask');
 
 // every finish has a schema the UI can render + the compositor can blend
 var BLENDS = { base: 1, over: 1, add: 1 }, bad = 0;

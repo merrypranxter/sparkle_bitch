@@ -526,17 +526,23 @@ async function poll(page, fn, timeout, label) {
       var u8 = new Uint8Array(await S.exportGifBytes());
       var dec = SB.decodeGIF(u8), hasT = false, f0 = dec.frames[0].data;
       for (var i = 0; i < f0.length; i += 4) { if (f0[i + 3] < 8) { hasT = true; break; } }
+      // per-finish blend override changes the composite (base covers vs add glows)
+      S.setFillStack([{ type: 'cdrom', params: D('cdrom'), alpha: 1, blend: 'base' }]);
+      var cdBase = frame(S.renderAt(0));
+      S.setFillStack([{ type: 'cdrom', params: D('cdrom'), alpha: 1, blend: 'add' }]);
+      var blendDelta = meanDiff(cdBase, frame(S.renderAt(0)));
       // an OUTLINE can wear a finish too
       S.setFillStack([]);
       S.setText({ text: 'O', size: 150, outlines: [{ width: 20, kind: 'finish', finish: { type: 'chrome', params: D('chrome'), alpha: 1 } }] });
       var outBright = bright(frame(S.renderStillCanvas()));
-      return { holo: holo, stackDelta: stackDelta, seam: seam, frames: dec.frames.length, hasT: hasT, outBright: outBright };
+      return { holo: holo, stackDelta: stackDelta, seam: seam, frames: dec.frames.length, hasT: hasT, outBright: outBright, blendDelta: blendDelta };
     });
     ok(fin.holo > 300, 'finishes: a holographic finish fills the letters (' + fin.holo + ' px)');
     ok(fin.stackDelta > 5, 'finishes: stacking a 2nd finish changes the composite (Δ ' + fin.stackDelta.toFixed(1) + ')');
     ok(fin.seam < 6, 'finishes: animated finish loops seamlessly (phase 0≈1 Δ ' + fin.seam.toFixed(2) + ')');
     ok(fin.frames > 1 && fin.hasT, 'finishes: stack exports a multi-frame transparent GIF (' + fin.frames + ' frames)');
     ok(fin.outBright > 200, 'finishes: an outline can wear a finish (' + fin.outBright + ' px)');
+    ok(fin.blendDelta > 3, 'finishes: per-finish blend override changes the composite (Δ ' + fin.blendDelta.toFixed(1) + ')');
 
     const finUI = await page.evaluate(() => {
       var S = window.SparkleBitch;

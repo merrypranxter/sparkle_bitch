@@ -199,9 +199,14 @@ function waitServer() {
   await finishDemo('fx-cdrom', 'CD-R', [{ type: 'cdrom', alpha: 1 }], '#08060f');
   await finishDemo('fx-oilslick', 'OIL', [{ type: 'oilslick', alpha: 1 }], '#05040a');
   await finishDemo('fx-rhinestone', 'BLING', [{ type: 'rhinestone', alpha: 1 }], '#0b0713', 'fredoka');
-  // the stacked monster, on a transparent background (a sticker)
+  await finishDemo('fx-neon', 'NEON', [{ type: 'neontube', alpha: 1 }], '#08040f');
+  await finishDemo('fx-chromatic', 'GHOST', [{ type: 'holographic', alpha: 1 }, { type: 'chromatic', alpha: 0.9, blend: 'add' }], '#0b0713');
+  // the stacked monster — a glowing chrome life-form (transparent sticker)
   await finishDemo('fx-monster', 'MONSTER', [
-    { type: 'liquidchrome', alpha: 1 }, { type: 'cdrom', alpha: 0.5 }, { type: 'holographic', alpha: 0.35 }
+    { type: 'liquidchrome', alpha: 1 },
+    { type: 'cdrom', alpha: 0.7, blend: 'add' },
+    { type: 'chromatic', alpha: 0.85, blend: 'add' },
+    { type: 'starburst', alpha: 1, blend: 'add' }
   ], null);
 
   await browser.close();

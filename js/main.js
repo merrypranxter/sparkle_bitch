@@ -445,7 +445,7 @@
     renderOutlineList(); if (state.mode === 'text') rebuildText();
   }
   // ---- fill finish-stack editor ----
-  var FINCATS = ['Iridescent', 'Metal', 'Gems', 'Refraction', 'Liquid', 'Basic'];
+  var FINCATS = ['Iridescent', 'Metal', 'Gems', 'Refraction', 'Liquid', 'Light', 'Glitch', 'Basic'];
   function fillFinishTypeSelect(sel, current) {
     sel.innerHTML = '';
     var byCat = {};
@@ -486,9 +486,14 @@
     var op = miniSlider('opacity', 0.1, 1, 0.05, item.alpha != null ? item.alpha : 1, 'finish opacity (blend it into the stack)');
     op.input.addEventListener('input', function () { item.alpha = parseFloat(op.input.value); });
     box.appendChild(op.wrap);
-    var badge = document.createElement('span'); badge.className = 'finish-blend';
-    badge.textContent = def.blend === 'add' ? 'add' : def.blend === 'over' ? 'screen' : 'base';
-    box.appendChild(badge);
+    // how this finish blends onto the ones below it (base covers, screen/glow layer)
+    var bl = document.createElement('label'); bl.className = 'mini-ctl'; bl.title = 'blend mode onto the stack below';
+    var bls = document.createElement('span'); bls.textContent = 'blend';
+    var bsel = document.createElement('select'); bsel.className = 'mini-select';
+    [['base', 'base'], ['over', 'screen'], ['add', 'glow']].forEach(function (o) { var op2 = document.createElement('option'); op2.value = o[0]; op2.textContent = o[1]; bsel.appendChild(op2); });
+    bsel.value = item.blend || def.blend;
+    bsel.addEventListener('change', function () { item.blend = bsel.value; });
+    bl.appendChild(bls); bl.appendChild(bsel); box.appendChild(bl);
   }
   function renderFinishList() {
     var box = $('finishList'); if (!box) return;
@@ -1316,7 +1321,7 @@
     },
     setFillStack: function (stack) {
       state.textOpts.finishes = (stack || []).map(function (it) {
-        return { type: it.type, params: it.params || (FIN ? FIN.defaults(it.type) : {}), alpha: it.alpha != null ? it.alpha : 1 };
+        return { type: it.type, params: it.params || (FIN ? FIN.defaults(it.type) : {}), alpha: it.alpha != null ? it.alpha : 1, blend: it.blend || null };
       });
       renderFinishList();
     },

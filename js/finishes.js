@@ -89,7 +89,7 @@
       if (!def.selfMask) { lc.globalCompositeOperation = 'destination-in'; lc.drawImage(mask, 0, 0, W, H); }
       ctx.save();
       ctx.globalAlpha = U.clamp(item.alpha != null ? item.alpha : 1, 0, 1);
-      ctx.globalCompositeOperation = blendOp(def.blend);
+      ctx.globalCompositeOperation = blendOp(item.blend || def.blend);   // per-item override
       ctx.drawImage(lay, 0, 0);
       ctx.restore();
     }
@@ -295,32 +295,24 @@
   // like light off a burned disc.
   register('cdrom', {
     label: 'CD-R Rainbow', category: 'Refraction', blend: 'base',
-    params: [{ key: 'spokes', type: 'range', def: 5, min: 2, max: 12, step: 1, label: 'Streaks' }],
+    params: [{ key: 'spokes', type: 'range', def: 6, min: 3, max: 14, step: 1, label: 'Streaks' }],
     draw: function (fx) {
-      var g = fx.ctx, w = fx.w, h = fx.h, ph = fx.phase01, cx = w / 2, cy = h / 2;
-      // dark disc base
-      g.fillStyle = '#0c0c14'; g.fillRect(0, 0, w, h);
-      var spokes = Math.max(2, Math.round(fx.p.spokes || 5));
-      if (typeof g.createConicGradient === 'function') {
-        var con = g.createConicGradient(ph * TAU, cx, cy);
-        for (var s = 0; s <= 1.0001; s += 1 / 24) {
-          var hue = (s * spokes) % 1;
-          con.addColorStop(Math.min(1, s), 'hsl(' + (hue * 360) + ',100%,60%)');
-        }
-        g.globalCompositeOperation = 'lighter'; g.fillStyle = con; g.fillRect(0, 0, w, h);
-        g.globalCompositeOperation = 'source-over';
-      } else {
-        // fallback: rotating spectral sweep via shade
-        var buf = fx.shade(w, h, 360, ph, function (nx, ny, p) {
-          var ang = Math.atan2(ny - 0.5, nx - 0.5) / TAU + 0.5;
-          var hue = ((ang + p) * spokes) % 1; var rgb = U.hslToRgb(hue * 360, 1, 0.6); return rgb;
-        });
-        g.drawImage(buf, 0, 0, w, h);
-      }
-      // bright radial glints
+      var g = fx.ctx, w = fx.w, h = fx.h, spokes = Math.max(3, Math.round(fx.p.spokes || 6));
+      var buf = fx.shade(w, h, 440, fx.phase01, function (nx, ny, ph) {
+        var dx = nx - 0.5, dy = ny - 0.5;
+        var ang = Math.atan2(dy, dx) / TAU + 0.5;           // 0..1 around the disc
+        var rad = Math.sqrt(dx * dx + dy * dy) * 2;         // 0..~1.4 out
+        var hue = ((ang + ph) * spokes + rad * 1.6) % 1; if (hue < 0) hue += 1;
+        // sharp radial streaks that rotate (dark grooves between bright spectra)
+        var streak = Math.pow(0.5 + 0.5 * Math.sin((ang + ph) * spokes * TAU * 3), 4);
+        var rgb = U.hslToRgb(hue * 360, 1, 0.14 + 0.52 * streak);
+        return rgb;
+      });
+      g.drawImage(buf, 0, 0, w, h);
+      // a small central hotspot only (no big white wash)
       g.globalCompositeOperation = 'lighter';
-      var rg = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.5);
-      rg.addColorStop(0, 'rgba(255,255,255,0.5)'); rg.addColorStop(0.5, 'rgba(255,255,255,0.05)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+      var cx = w / 2, cy = h / 2, rg = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.2);
+      rg.addColorStop(0, 'rgba(255,255,255,0.32)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = rg; g.fillRect(0, 0, w, h);
       g.globalCompositeOperation = 'source-over';
     }
@@ -438,21 +430,154 @@
       });
       g.drawImage(buf, 0, 0, w, h);
       // colour sparks
-      var f = fx.field(w, h, 0.5, fx.seed + 9), fire = fx.p.fire != null ? fx.p.fire : 0.7;
-      var scale = Math.max(0.75, Math.min(w, h) / 300) * 5;
+      var f = fx.field(w, h, 0.55, fx.seed + 9), fire = fx.p.fire != null ? fx.p.fire : 0.7;
+      var scale = Math.max(0.75, Math.min(w, h) / 300) * 6;
       g.globalCompositeOperation = 'lighter';
       for (var i = 0; i < f.flakes.length; i++) {
         var fl = f.flakes[i];
-        var st = fx.still ? { bright: 0.4 + 0.5 * ((fl.phase * 5.3) % 1) } : fx.GL.flakeState(fl, ph);
-        if (st.bright < 0.2) continue;
-        var x = fl.nx * w, y = fl.ny * h, r = fl.size * scale * st.bright;
+        // still: show a representative sparse frame (only ~half lit), not all-max
+        var st = fx.still ? { bright: (fl.phase * 6.1) % 1 < 0.45 ? 0.3 + 0.5 * ((fl.phase * 6.1) % 1) : 0 } : fx.GL.flakeState(fl, ph);
+        if (st.bright < 0.18) continue;
+        var x = fl.nx * w, y = fl.ny * h, r = fl.size * scale * (0.45 + 0.7 * st.bright);
         var hue = (fl.phase + ph * (fl.cycles || 4)) % 1;
-        var col = fx.U.hslToRgb(hue * 360, 1, 0.62);
+        var col = fx.U.hslToRgb(hue * 360, 1, 0.6);
         var rg = g.createRadialGradient(x, y, 0, x, y, r);
-        rg.addColorStop(0, css(col, 0.9 * fire)); rg.addColorStop(1, css(col, 0));
+        rg.addColorStop(0, css(col, Math.min(0.95, 0.95 * fire * st.bright))); rg.addColorStop(0.55, css(col, 0.28 * fire)); rg.addColorStop(1, css(col, 0));
         g.fillStyle = rg; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
       }
       g.globalCompositeOperation = 'source-over';
+    }
+  });
+
+  // =======================================================================
+  //  LIGHT treatments + GLITCH + more iridescent / metal  (batch 2)
+  // =======================================================================
+  var _fl2 = null;
+  function finishLayer2(w, h) { if (!_fl2 || _fl2.width !== w || _fl2.height !== h) _fl2 = createCanvas(w, h); return _fl2; }
+  // draw the mask tinted a flat colour onto g (via a scratch layer)
+  function drawTint(g, m, color, w, h) {
+    var t = finishLayer2(w, h), tc = t.getContext('2d');
+    tc.setTransform(1, 0, 0, 1, 0, 0); tc.globalCompositeOperation = 'source-over'; tc.globalAlpha = 1; tc.filter = 'none'; tc.clearRect(0, 0, w, h);
+    tc.drawImage(m, 0, 0, w, h); tc.globalCompositeOperation = 'source-in'; tc.fillStyle = color; tc.fillRect(0, 0, w, h);
+    g.drawImage(t, 0, 0);
+  }
+
+  // Chromatic Ghosting — RGB copies separate, vibrate, snap back together. Draws
+  // its own offset copies of the letter mask, so it exceeds the mask (selfMask).
+  register('chromatic', {
+    label: 'Chromatic Ghosting', category: 'Glitch', blend: 'add', selfMask: true,
+    params: [{ key: 'amount', type: 'range', def: 0.5, min: 0.05, max: 1, step: 0.05, label: 'Split' }],
+    draw: function (fx) {
+      var g = fx.ctx, w = fx.w, h = fx.h, m = fx.mask;
+      var amt = (fx.p.amount != null ? fx.p.amount : 0.5) * 0.03 * Math.min(w, h);
+      var dx = amt * Math.cos(fx.phase01 * TAU), dy = amt * Math.sin(fx.phase01 * TAU);   // 1 rev -> loop-safe
+      g.globalCompositeOperation = 'lighter';
+      function copy(color, ox, oy) {
+        var t = finishLayer2(w, h), tc = t.getContext('2d');
+        tc.setTransform(1, 0, 0, 1, 0, 0); tc.globalCompositeOperation = 'source-over'; tc.globalAlpha = 1; tc.filter = 'none'; tc.clearRect(0, 0, w, h);
+        tc.drawImage(m, ox, oy, w, h); tc.globalCompositeOperation = 'source-in'; tc.fillStyle = color; tc.fillRect(0, 0, w, h);
+        g.drawImage(t, 0, 0);
+      }
+      copy('#ff0033', -dx, -dy); copy('#00ff44', 0, 0); copy('#0044ff', dx, dy);
+      g.globalCompositeOperation = 'source-over';
+    }
+  });
+
+  // Starburst Glare — bright points that explode into 4/6/8-point stars.
+  register('starburst', {
+    label: 'Starburst Glare', category: 'Light', blend: 'add',
+    params: [{ key: 'points', type: 'range', def: 4, min: 4, max: 8, step: 2, label: 'Points' },
+             { key: 'density', type: 'range', def: 0.35, min: 0.15, max: 0.8, step: 0.05, label: 'Count' }],
+    draw: function (fx) {
+      var g = fx.ctx, w = fx.w, h = fx.h, ph = fx.phase01;
+      var f = fx.field(w, h, fx.p.density != null ? fx.p.density : 0.35, fx.seed + 3);
+      var pts = Math.max(4, Math.round(fx.p.points || 4)), scale = Math.max(0.75, Math.min(w, h) / 300);
+      for (var i = 0; i < f.flakes.length; i++) {
+        var fl = f.flakes[i];
+        var st = fx.still ? { bright: 0.6 * ((fl.phase * 3.3) % 1) + 0.25 } : fx.GL.flakeState(fl, ph);
+        if (st.bright < 0.35) continue;
+        var x = fl.nx * w, y = fl.ny * h, L = fl.size * scale * 11 * st.bright, b = st.bright;
+        g.save(); g.translate(x, y); g.rotate(fl.phase * TAU);
+        g.globalAlpha = b; g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = Math.max(1, L * 0.03);
+        for (var k = 0; k < pts; k++) { var a = (k / pts) * TAU; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * L, Math.sin(a) * L); g.stroke(); }
+        var rg = g.createRadialGradient(0, 0, 0, 0, 0, L * 0.3); rg.addColorStop(0, 'rgba(255,255,255,' + b.toFixed(2) + ')'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = rg; g.beginPath(); g.arc(0, 0, L * 0.3, 0, 7); g.fill();
+        g.restore();
+      }
+      g.globalAlpha = 1;
+    }
+  });
+
+  // Satin Sheen — broad silky light bands sweep across like moving fabric.
+  register('satin', {
+    label: 'Satin Sheen', category: 'Light', blend: 'add',
+    params: [{ key: 'bands', type: 'range', def: 2, min: 1, max: 5, step: 1, label: 'Bands' },
+             { key: 'tint', type: 'color', def: '#ffffff', label: 'Tint' }],
+    draw: function (fx) {
+      var g = fx.ctx, w = fx.w, h = fx.h, ph = fx.phase01, bands = Math.max(1, Math.round(fx.p.bands || 2));
+      var c = hx(fx.p.tint || '#ffffff');
+      g.globalCompositeOperation = 'lighter';
+      for (var k = 0; k < bands; k++) {
+        var pos = (ph * (k + 1) + k / bands) % 1;         // integer revs -> loop-safe
+        var cx = pos * (w + h) - h * 0.5;
+        var grad = g.createLinearGradient(cx - w * 0.28, 0, cx + w * 0.28, h);
+        grad.addColorStop(0, css(c, 0)); grad.addColorStop(0.5, css(c, 0.5)); grad.addColorStop(1, css(c, 0));
+        g.fillStyle = grad; g.fillRect(0, 0, w, h);
+      }
+      g.globalCompositeOperation = 'source-over';
+    }
+  });
+
+  // Neon Tubing — coloured glow halo + a blazing near-white core; the halo
+  // spills past the letters (selfMask).
+  register('neontube', {
+    label: 'Neon Tubing', category: 'Light', blend: 'add', selfMask: true,
+    params: [{ key: 'color', type: 'color', def: '#ff2fd0', label: 'Tube' },
+             { key: 'glow', type: 'range', def: 0.6, min: 0.2, max: 1, step: 0.05, label: 'Glow' }],
+    draw: function (fx) {
+      var g = fx.ctx, w = fx.w, h = fx.h, m = fx.mask;
+      var c = fx.p.color || '#ff2fd0', glow = fx.p.glow != null ? fx.p.glow : 0.6;
+      var rad = Math.max(2, Math.min(w, h) * 0.03 * glow);
+      g.globalCompositeOperation = 'lighter';
+      if ('filter' in g) {
+        g.globalAlpha = 0.55; g.filter = 'blur(' + (rad * 2).toFixed(1) + 'px)'; drawTint(g, m, c, w, h);
+        g.filter = 'blur(' + rad.toFixed(1) + 'px)'; drawTint(g, m, c, w, h); g.filter = 'none';
+      } else { g.globalAlpha = 0.5; drawTint(g, m, c, w, h); }
+      g.globalAlpha = 1; drawTint(g, m, '#fff5ff', w, h);   // core
+      g.globalCompositeOperation = 'source-over';
+    }
+  });
+
+  // Aurora Shimmer — slow luminous green/cyan/violet/pink ribbons drifting inside.
+  register('aurora', {
+    label: 'Aurora Shimmer', category: 'Iridescent', blend: 'base',
+    params: [{ key: 'ribbons', type: 'range', def: 1, min: 1, max: 3, step: 1, label: 'Ribbons' }],
+    draw: function (fx) {
+      var revs = Math.max(1, Math.round(fx.p.ribbons || 1));
+      var buf = fx.shade(fx.w, fx.h, 340, fx.phase01, function (nx, ny, ph) {
+        var ribbon = Math.sin(nx * 6 + Math.sin(ny * 4 + ph * TAU * revs) * 2.5 + ph * TAU * revs);
+        var hue = 150 + 95 * Math.sin(nx * 2 + ny * 3 + ph * TAU * revs);
+        var li = 0.1 + 0.42 * Math.pow(0.5 + 0.5 * ribbon, 2);
+        return fx.U.hslToRgb(hue, 0.85, li);
+      });
+      fx.ctx.drawImage(buf, 0, 0, fx.w, fx.h);
+    }
+  });
+
+  // Anodized Aluminum — saturated metallic bands with a fine brushed grain.
+  register('anodized', {
+    label: 'Anodized Aluminum', category: 'Metal', blend: 'base',
+    params: [{ key: 'hue', type: 'range', def: 200, min: 0, max: 360, step: 5, label: 'Hue' }],
+    draw: function (fx) {
+      var baseHue = fx.p.hue != null ? fx.p.hue : 200;
+      var buf = fx.shade(fx.w, fx.h, 400, fx.phase01, function (nx, ny, ph) {
+        var ramp = 0.4 + 0.35 * Math.sin(ny * Math.PI);
+        var sheen = Math.pow(0.5 + 0.5 * Math.sin((ny - ph) * TAU), 8) * 0.5;   // 1 rev -> loop-safe
+        var brush = 0.04 * Math.sin(nx * 260);
+        var hue = baseHue + 40 * Math.sin(ny * 3);
+        return fx.U.hslToRgb(hue, 0.55, Math.max(0.05, Math.min(0.95, ramp + sheen + brush)));
+      });
+      fx.ctx.drawImage(buf, 0, 0, fx.w, fx.h);
     }
   });
 
