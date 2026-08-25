@@ -56,6 +56,10 @@
     var maxLong = opts.maxLong || 480;
     var matte = opts.matte;              // may be null/undefined for transparent
     onProgress = onProgress || function () {};
+    // text filled with an animated image/GIF: one output frame per texture frame
+    if (source.kind === 'text' && source.textureFrames > 1) {
+      return gifFromTextFrames(source, instances, params, maxLong, matte, opts, onProgress);
+    }
     if (source.kind === 'gif' && source.frames) {
       return gifFromFrames(source, instances, params, maxLong, matte, opts, onProgress);
     }
@@ -121,6 +125,41 @@
       SB.render.render(ctx, src[k].canvas, instances, params, phase, frameOpts({ matte: matte || '#0a0710' }, opts.render));
       frames.push({ data: ctx.getImageData(0, 0, sz.w, sz.h).data, delay: src[k].delay || 100 });
       acc += (src[k].delay || 100); k++; onProgress((k / src.length) * 0.9, 'rendering');
+      return nextTick().then(step);
+    }
+    return step();
+  }
+
+  // Glitter text with an uploaded animated texture: emit exactly one output frame
+  // per driving-texture frame (a 16-frame GIF fill -> 16-frame text), honouring
+  // that texture's own per-frame delays. Deliberately overrides Secs/FPS.
+  function gifFromTextFrames(source, instances, params, maxLong, matte, opts, onProgress) {
+    var sz = fitSize(source.width, source.height, maxLong);
+    var cv = createCanvas(sz.w, sz.h), ctx = cv.getContext('2d');
+    var F = source.textureFrames, delays = source.textureDelays || [];
+    // cumulative delay timeline: each output frame's phase lands at the MIDPOINT of
+    // its source frame's delay window, so the delay-aware preview picker selects the
+    // same frame k (with uneven delays too) and preview == export.
+    var total = 0, cum = new Array(F), j;
+    for (j = 0; j < F; j++) { cum[j] = total; total += (delays[j] != null ? delays[j] : 100); }
+    var frames = [], k = 0;
+
+    function step() {
+      if (k >= F) {
+        onProgress(0.95, 'encoding');
+        return nextTick().then(function () {
+          var bytes = SB.encodeGIF(frames, {
+            width: sz.w, height: sz.h, loop: 0,
+            transparencyDiff: opts.transparencyDiff !== false, transparent: !!opts.transparent, dither: !!opts.dither
+          });
+          onProgress(1, 'done'); return bytes;
+        });
+      }
+      var dk = delays[k] != null ? delays[k] : 100;
+      var phase = total > 0 ? (cum[k] + dk / 2) / total : k / F;
+      SB.render.render(ctx, source.drawable, instances, params, phase, frameOpts({ matte: matte }, opts.render));
+      frames.push({ data: ctx.getImageData(0, 0, sz.w, sz.h).data, delay: dk });
+      k++; onProgress((k / F) * 0.9, 'rendering');
       return nextTick().then(step);
     }
     return step();

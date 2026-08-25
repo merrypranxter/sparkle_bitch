@@ -125,6 +125,90 @@ function waitServer() {
     { width: 6, kind: 'color', color: '#4fe3ff' }
   ]);
 
+  // ---- NEW colours: a proper red, black and yellow ----
+  await textDemo('text-red', 'RED HOT', 'red', '#0b0713', 'arialblack');
+  await textDemo('text-yellow', 'sunshine', 'yellow', '#0b0713', 'fredoka');
+  await textDemo('text-black', 'BLACK ✦', 'black', '#f2ecf6', 'arialblack');   // black glitter reads on a light bg
+
+  // ---- PER-OUTLINE glitter: fine dense silver fill + a chunky, low-density gold outline ----
+  await textDemo('text-peroutline', 'outline', 'silver', '#0b0713', 'bungee', [
+    { width: 13, kind: 'glitter', glitter: 'gold', density: 0.5, grain: 1.8, intensity: 1 }
+  ]);
+
+  // ---- UPLOAD FILL: an animated GIF is the fill; its 12 frames drive the text ----
+  await page.evaluate(async () => {
+    var S = window.SparkleBitch;
+    var W = 96, H = 96, N = 12, frames = [];
+    for (var f = 0; f < N; f++) {
+      var d = new Uint8ClampedArray(W * H * 4);
+      for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+        var p = (y * W + x) * 4;
+        var rgb = SB.util.hslToRgb(((x + f * (W / N)) / W) * 360, 1, 0.55);
+        d[p] = rgb[0]; d[p + 1] = rgb[1]; d[p + 2] = rgb[2]; d[p + 3] = 255;
+      }
+      frames.push({ data: d, delay: 90 });
+    }
+    var bytes = SB.encodeGIF(frames, { width: W, height: H, loop: 0 });
+    var id = await S.loadTextureFromBuffer(bytes, true, 'rainbow-shimmer');
+    S.setMode('text');
+    S.setText({ text: 'SHINY', size: 130, font: 'arialblack', bold: true, shadow: true, bg: null,
+      outlines: [{ width: 8, kind: 'color', color: '#20112e' }] });
+    S.setGlitter({ glitterStyle: 'tex:' + id });
+  });
+  await page.waitForFunction(() => window.SparkleBitch.state.source && window.SparkleBitch.state.source.textureFrames === 12, { timeout: 5000 });
+  await sleep(400);
+  const giffill = await page.evaluate(async () => {
+    var st = window.SparkleBitch.state;
+    var gif = await SB.exporter.exportGIF(st.source, st.instances, st.params, {
+      maxLong: 600, matte: undefined,
+      render: { text: st.source.textRender, glitterField: st.glitterField, fillTexture: st.source.fillTexture },
+      transparent: true
+    }, function () {});
+    var b = '', u8 = new Uint8Array(gif);
+    for (var i = 0; i < u8.length; i++) b += String.fromCharCode(u8[i]);
+    return { gif: btoa(b), frames: SB.decodeGIF(u8).frames.length };
+  });
+  fs.writeFileSync(path.join(DEMO, 'text-giffill.gif'), Buffer.from(giffill.gif, 'base64'));
+  console.log('wrote demo/text-giffill.gif (' + ((fs.statSync(path.join(DEMO, 'text-giffill.gif')).size / 1024) | 0) + ' KB, ' + giffill.frames + ' frames)');
+
+  // ---- FINISH engine: animated stacks ----
+  async function finishDemo(tag, text, stack, bg, font) {
+    await page.evaluate(function (a) {
+      window.SparkleBitch.setMode('text');
+      window.SparkleBitch.setText({ text: a.text, size: 120, font: a.font || 'arialblack', bold: true, shadow: true, bg: a.bg || null, outlines: [] });
+      window.SparkleBitch.setFillStack(a.stack);
+    }, { text: text, stack: stack, bg: bg, font: font });
+    await page.evaluate(() => document.fonts.ready);
+    await sleep(350);
+    const out = await page.evaluate(async function (transparent) {
+      var st = window.SparkleBitch.state;
+      var gif = await SB.exporter.exportGIF(st.source, st.instances, st.params, {
+        maxLong: 600, matte: st.textOpts.bg || undefined,
+        render: { text: st.source.textRender, glitterField: st.glitterField, finishStack: st.textOpts.finishes },
+        transparent: transparent, lengthSec: 2, fps: 16
+      }, function () {});
+      var b = '', u8 = new Uint8Array(gif);
+      for (var i = 0; i < u8.length; i++) b += String.fromCharCode(u8[i]);
+      return btoa(b);
+    }, !bg);
+    fs.writeFileSync(path.join(DEMO, tag + '.gif'), Buffer.from(out, 'base64'));
+    console.log('wrote demo/' + tag + '.gif (' + ((fs.statSync(path.join(DEMO, tag + '.gif')).size / 1024) | 0) + ' KB)');
+  }
+  await finishDemo('fx-holographic', 'HOLO', [{ type: 'holographic', alpha: 1 }], '#0b0713');
+  await finishDemo('fx-liquidchrome', 'CHROME', [{ type: 'liquidchrome', alpha: 1 }], '#08060f');
+  await finishDemo('fx-cdrom', 'CD-R', [{ type: 'cdrom', alpha: 1 }], '#08060f');
+  await finishDemo('fx-oilslick', 'OIL', [{ type: 'oilslick', alpha: 1 }], '#05040a');
+  await finishDemo('fx-rhinestone', 'BLING', [{ type: 'rhinestone', alpha: 1 }], '#0b0713', 'fredoka');
+  await finishDemo('fx-neon', 'NEON', [{ type: 'neontube', alpha: 1 }], '#08040f');
+  await finishDemo('fx-chromatic', 'GHOST', [{ type: 'holographic', alpha: 1 }, { type: 'chromatic', alpha: 0.9, blend: 'add' }], '#0b0713');
+  // the stacked monster — a glowing chrome life-form (transparent sticker)
+  await finishDemo('fx-monster', 'MONSTER', [
+    { type: 'liquidchrome', alpha: 1 },
+    { type: 'cdrom', alpha: 0.7, blend: 'add' },
+    { type: 'chromatic', alpha: 0.85, blend: 'add' },
+    { type: 'starburst', alpha: 1, blend: 'add' }
+  ], null);
+
   await browser.close();
   server.kill('SIGTERM');
   console.log('demo done');

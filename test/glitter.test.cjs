@@ -42,5 +42,34 @@ assert(same, 'same seed reproduces the same glitter field');
 const st = SB.glitter.flakeState(field.flakes[0], 0.33);
 assert(st.bright >= 0 && st.bright <= 1, 'brightness stays in [0,1]');
 
+// the colours Merry asked for + the new combos are all present
+['red', 'black', 'yellow', 'blackgold', 'emerald', 'copper', 'oilslick'].forEach(function (id) {
+  assert(!!SB.glitter.STYLES[id], 'new style "' + id + '" present');
+});
+// black glitter is dark-based (NOT a light-bg style) so it actually reads black —
+// its sparkle comes from the white twinkle cores, not the flake colour
+const blk = SB.glitter.STYLES.black;
+const blkLum = 0.2126 * blk.base[0] + 0.7152 * blk.base[1] + 0.0722 * blk.base[2];
+assert(!blk.light && blkLum < 40, 'black glitter has a dark base (lum ' + blkLum.toFixed(0) + ')');
+// red reads red, yellow reads yellow (dominant channels in the base tint)
+assert(SB.glitter.STYLES.red.base[0] > SB.glitter.STYLES.red.base[2] + 40, 'red glitter base is red-dominant');
+
+// loop closure holds for EVERY style, not just rainbow (no GIF snap on any colour)
+let worstAll = 0;
+SB.glitter.styleList().forEach(function (s) {
+  const fld = SB.glitter.buildField(200, 120, s.id, 0.8, 99, 1);
+  for (let i = 0; i < fld.flakes.length; i += 5) {
+    const f = fld.flakes[i];
+    worstAll = Math.max(worstAll, Math.abs(SB.glitter.flakeState(f, 0).bright - SB.glitter.flakeState(f, 1).bright));
+  }
+});
+assert(near(worstAll, 0, 1e-9), 'every style loops cleanly (worst seam ' + worstAll.toExponential(1) + ')');
+
+// grain multiplier reaches the field but never changes the flake COUNT
+const gA = SB.glitter.buildField(300, 200, 'gold', 0.7, 5, 1);
+const gB = SB.glitter.buildField(300, 200, 'gold', 0.7, 5, 0.3);
+assert(gA.grain === 1 && gB.grain === 0.3, 'grain multiplier is carried on the field');
+assert(gA.flakes.length === gB.flakes.length, 'grain does not change the flake count (' + gA.flakes.length + ')');
+
 console.log(failures === 0 ? '\nGLITTER OK' : '\nGLITTER FAILED (' + failures + ')');
 process.exit(failures === 0 ? 0 : 1);

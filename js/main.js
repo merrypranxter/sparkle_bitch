@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   var U = SB.util, A = SB.analyze, SPK = SB.sparkles, R = SB.render,
-      MED = SB.media, EXP = SB.exporter, PRE = SB.presets, GL = SB.glitter, TXT = SB.text;
+      MED = SB.media, EXP = SB.exporter, PRE = SB.presets, GL = SB.glitter, TXT = SB.text, FIN = SB.finishes;
 
   var $ = function (id) { return document.getElementById(id); };
   var MATTE = '#0a0710';
@@ -21,6 +21,7 @@
     instances: [],
     rng: null,
     glitterField: null,
+    textures: {},       // id -> uploaded image/GIF texture (fill/outline source)
     dust: null,         // { field, mask, intensity, blend } | null
     compare: false,     // hold-to-compare: render the bare source
     textOpts: {
@@ -28,6 +29,8 @@
       align: 'center', leading: 1.3, letterSpacing: 0, caps: false,
       // layered outlines, innermost first; each is a solid colour OR a glitter style
       outlines: [{ width: 5, kind: 'color', color: '#3a0a2e' }],
+      // stackable reflective finishes composited over the fill (empty = plain fill)
+      finishes: [],
       shadow: true, bg: null // null = transparent
     },
     maskCanvas: null,   // working-res canvas; painted = selected
@@ -184,13 +187,38 @@
     };
   }
 
+  // 'tex:<id>' -> the registered texture object, else null
+  function textureFor(styleId) {
+    return (typeof styleId === 'string' && styleId.indexOf('tex:') === 0) ? (state.textures[styleId.slice(4)] || null) : null;
+  }
+  // Attach uploaded textures to a text source: the fill (from glitterStyle) and
+  // any texture outline layers. The animated texture with the MOST frames becomes
+  // the "driver" whose frame count + per-frame delays the GIF export honours.
+  function resolveTextures(src) {
+    if (!src || !src.textRender) return;
+    var driver = null;
+    function consider(tex) { if (tex && tex.animated && (!driver || tex.frames.length > driver.frames.length)) driver = tex; }
+    src.fillTexture = textureFor(state.params.glitterStyle);
+    consider(src.fillTexture);
+    (src.textRender.layers || []).forEach(function (L) {
+      if (L.kind === 'texture') { L.texture = state.textures[L.textureId] || null; consider(L.texture); }
+    });
+    if (driver) {
+      src.textureFrames = driver.frames.length;
+      src.textureDelays = driver.frames.map(function (f) { return f.delay != null ? f.delay : 100; });
+      src.textureTotalMs = src.textureDelays.reduce(function (a, b) { return a + b; }, 0);
+    } else { src.textureFrames = 0; src.textureDelays = null; src.textureTotalMs = 0; }
+  }
   function buildTextNow() {
     state.textSource = MED.makeTextSource(state.textOpts);
     state.source = state.textSource;
     view.width = state.source.width; view.height = state.source.height;
     document.body.classList.add('has-image');
     buildGlitterField();
-    setStatus('“' + state.textOpts.text + '” · ' + state.params.glitterStyle + ' glitter');
+    resolveTextures(state.textSource);
+    var frames = state.textSource.textureFrames;
+    setStatus('“' + state.textOpts.text + '”' +
+      (frames > 1 ? ' · ' + frames + '-frame image fill' : ' · ' + state.params.glitterStyle + ' glitter'));
   }
   function rebuildText() {
     // Build now (always fresh / correct size). If the chosen font's glyphs
@@ -205,6 +233,54 @@
         }
       } catch (e) {}
     }
+  }
+
+  // ---- uploaded fill / outline textures ----
+  function populateGlitterStyleSelect() {
+    var sel = $('glitterStyle'); if (!sel) return;
+    var cur = state.params.glitterStyle;
+    sel.innerHTML = '';
+    GL.styleList().forEach(function (s) { var o = document.createElement('option'); o.value = s.id; o.textContent = s.label; sel.appendChild(o); });
+    // uploaded textures are a TEXT-mode fill; don't offer them to the image
+    // glitter-fill, where GL.buildField doesn't understand a tex: id (silver).
+    var tex = textureOptions();
+    if (tex.length && state.mode === 'text') {
+      var tg = document.createElement('optgroup'); tg.label = 'Your uploads';
+      tex.forEach(function (t) { var o = document.createElement('option'); o.value = t.id; o.textContent = t.label; tg.appendChild(o); });
+      sel.appendChild(tg);
+    }
+    sel.value = cur;
+  }
+  var _texN = 0;
+  function registerTexture(tex, label) {
+    var id = 'tex' + (++_texN);
+    tex.label = ((label || '').replace(/[_-]+/g, ' ').trim() || ('upload ' + _texN)).slice(0, 22);
+    state.textures[id] = tex;
+    return id;
+  }
+  function refreshTexturePickers() { populateGlitterStyleSelect(); renderOutlineList(); }
+  function onTextureFile(file) {
+    if (!file) return;
+    setStatus('Loading “' + (file.name || 'image') + '”…');
+    MED.loadTexture(file).then(function (tex) {
+      var id = registerTexture(tex, (file.name || 'upload').replace(/\.[a-z0-9]+$/i, ''));
+      state.params.glitterStyle = 'tex:' + id;     // use it as the fill right away
+      refreshTexturePickers();
+      if (state.mode !== 'text') setMode('text'); else rebuildText();
+      updateColorUI();
+      setStatus(tex.animated
+        ? 'Loaded ' + tex.frames.length + '-frame GIF fill ✨ — exports ' + tex.frames.length + ' frames'
+        : 'Loaded image fill ✨');
+    }).catch(function (e) { setStatus('⚠ ' + (e && e.message || 'Could not load that file')); });
+  }
+  // e2e harness: register a texture straight from bytes (mirrors loadFontFromBuffer)
+  function loadTextureFromBuffer(buffer, isGif, label) {
+    var file = new File([buffer], (label || 'tex') + (isGif ? '.gif' : '.png'), { type: isGif ? 'image/gif' : 'image/png' });
+    return MED.loadTexture(file).then(function (tex) {
+      var id = registerTexture(tex, label || 'upload');
+      refreshTexturePickers();
+      return id;
+    });
   }
 
   function populateFontSelect() {
@@ -262,39 +338,106 @@
   }
 
   // ---- layered outlines UI ----
+  // uploaded textures as picker options ('tex:<id>'); empty until one is loaded
+  function textureOptions() {
+    var out = [];
+    for (var id in state.textures) if (state.textures.hasOwnProperty(id)) out.push({ id: 'tex:' + id, label: state.textures[id].label });
+    return out;
+  }
   function fillOutlineType(sel, current) {
     sel.innerHTML = '';
     var solid = document.createElement('option'); solid.value = 'color'; solid.textContent = 'Solid'; sel.appendChild(solid);
     var og = document.createElement('optgroup'); og.label = 'Glitter';
     GL.styleList().forEach(function (s) { var o = document.createElement('option'); o.value = s.id; o.textContent = s.label; og.appendChild(o); });
     sel.appendChild(og);
+    if (FIN) {
+      var fg = document.createElement('optgroup'); fg.label = 'Finishes';
+      FIN.list().forEach(function (f) { if (f.category === 'Basic') return; var o = document.createElement('option'); o.value = 'fin:' + f.id; o.textContent = f.label; fg.appendChild(o); });
+      sel.appendChild(fg);
+    }
+    var tex = textureOptions();
+    if (tex.length) {
+      var tg = document.createElement('optgroup'); tg.label = 'Your uploads';
+      tex.forEach(function (t) { var o = document.createElement('option'); o.value = t.id; o.textContent = t.label; tg.appendChild(o); });
+      sel.appendChild(tg);
+    }
     sel.value = current;
+  }
+  // a compact labelled slider for a single per-outline glitter knob
+  function miniSlider(label, min, max, step, val, title) {
+    var wrap = document.createElement('label'); wrap.className = 'mini-ctl'; wrap.title = title;
+    var span = document.createElement('span'); span.textContent = label;
+    var input = document.createElement('input'); input.type = 'range';
+    input.min = min; input.max = max; input.step = step; input.value = val;
+    wrap.appendChild(span); wrap.appendChild(input);
+    return { wrap: wrap, input: input, set: function (v) { input.value = v; } };
+  }
+  // current picker value for a layer: 'color' | glitter-id | 'tex:<id>'
+  function outlineTypeValue(layer) {
+    if (layer.kind === 'finish') return 'fin:' + ((layer.finish && layer.finish.type) || 'holographic');
+    if (layer.kind === 'texture') return 'tex:' + layer.textureId;
+    if (layer.kind === 'glitter') return layer.glitter || 'silver';
+    return 'color';
   }
   function renderOutlineList() {
     var box = $('outlineList'); if (!box) return;
     box.innerHTML = '';
     state.textOpts.outlines.forEach(function (layer) {
+      var item = document.createElement('div'); item.className = 'outline-item';
       var row = document.createElement('div'); row.className = 'outline-row';
       var ty = document.createElement('select');
-      fillOutlineType(ty, layer.kind === 'glitter' ? (layer.glitter || 'silver') : 'color');
+      fillOutlineType(ty, outlineTypeValue(layer));
       var col = document.createElement('input'); col.type = 'color'; col.value = layer.color || '#3a0a2e';
-      col.style.visibility = layer.kind === 'glitter' ? 'hidden' : 'visible';
-      var w = document.createElement('input'); w.type = 'range'; w.min = '2'; w.max = '26'; w.step = '1'; w.value = layer.width; w.title = 'width';
+      var w = document.createElement('input'); w.type = 'range'; w.min = '2'; w.max = '26'; w.step = '1'; w.value = layer.width; w.title = 'band width';
       var rm = document.createElement('button'); rm.className = 'btn tiny'; rm.textContent = '✕'; rm.title = 'remove';
+      row.appendChild(ty); row.appendChild(col); row.appendChild(w); row.appendChild(rm);
+      item.appendChild(row);
+
+      // per-outline glitter knobs — density / grain / strength, this band only
+      var sub = document.createElement('div'); sub.className = 'outline-glitter';
+      var dS = miniSlider('D', 0.1, 2, 0.05, layer.density != null ? layer.density : state.params.glitterDensity, 'glitter density (this outline)');
+      var gS = miniSlider('G', 0.2, 2, 0.05, layer.grain != null ? layer.grain : state.params.glitterGrain, 'grain size (this outline)');
+      var sS = miniSlider('S', 0.2, 1, 0.05, layer.intensity != null ? layer.intensity : state.params.glitterIntensity, 'glitter strength (this outline)');
+      sub.appendChild(dS.wrap); sub.appendChild(gS.wrap); sub.appendChild(sS.wrap);
+      item.appendChild(sub);
+      box.appendChild(item);
+
+      function showControls() {
+        var glit = layer.kind === 'glitter', tex = layer.kind === 'texture';
+        col.style.visibility = layer.kind === 'color' ? 'visible' : 'hidden';  // keep the grid cell
+        sub.style.display = (glit || tex) ? '' : 'none';
+        dS.wrap.style.display = glit ? '' : 'none';        // grain/density are glitter-only
+        gS.wrap.style.display = glit ? '' : 'none';
+        sS.wrap.style.display = (glit || tex) ? '' : 'none';  // strength applies to textures too
+      }
+      showControls();
+
       ty.addEventListener('change', function () {
-        if (ty.value === 'color') { layer.kind = 'color'; col.style.visibility = 'visible'; }
-        else { layer.kind = 'glitter'; layer.glitter = ty.value; col.style.visibility = 'hidden'; }
+        var v = ty.value;
+        if (v === 'color') { layer.kind = 'color'; }
+        else if (v.indexOf('tex:') === 0) { layer.kind = 'texture'; layer.textureId = v.slice(4); }
+        else if (v.indexOf('fin:') === 0) { var fid = v.slice(4); layer.kind = 'finish'; layer.finish = { type: fid, params: FIN.defaults(fid), alpha: 1 }; }
+        else {
+          layer.kind = 'glitter'; layer.glitter = v;
+          // seed this outline's knobs from the fill so it starts sane, then tweak
+          if (layer.density == null) layer.density = state.params.glitterDensity;
+          if (layer.grain == null) layer.grain = state.params.glitterGrain;
+          if (layer.intensity == null) layer.intensity = state.params.glitterIntensity;
+          dS.set(layer.density); gS.set(layer.grain); sS.set(layer.intensity);
+        }
+        showControls();
         if (state.mode === 'text') rebuildText();
       });
       col.addEventListener('input', function () { layer.color = col.value; if (state.mode === 'text') rebuildText(); });
       w.addEventListener('input', function () { layer.width = parseFloat(w.value); if (state.mode === 'text') rebuildText(); });
+      dS.input.addEventListener('input', function () { layer.density = parseFloat(dS.input.value); if (state.mode === 'text') rebuildText(); });
+      gS.input.addEventListener('input', function () { layer.grain = parseFloat(gS.input.value); if (state.mode === 'text') rebuildText(); });
+      sS.input.addEventListener('input', function () { layer.intensity = parseFloat(sS.input.value); if (state.mode === 'text') rebuildText(); });
       rm.addEventListener('click', function () {
         var i = state.textOpts.outlines.indexOf(layer);
         if (i >= 0) state.textOpts.outlines.splice(i, 1);
         renderOutlineList(); if (state.mode === 'text') rebuildText();
       });
-      row.appendChild(ty); row.appendChild(col); row.appendChild(w); row.appendChild(rm);
-      box.appendChild(row);
     });
   }
   function addOutline() {
@@ -303,10 +446,95 @@
     state.textOpts.outlines.push({ width: 6, kind: 'color', color: c, glitter: 'neon' });
     renderOutlineList(); if (state.mode === 'text') rebuildText();
   }
+  // ---- fill finish-stack editor ----
+  var FINCATS = ['Iridescent', 'Metal', 'Gems', 'Refraction', 'Liquid', 'Light', 'Glitch', 'Basic'];
+  function fillFinishTypeSelect(sel, current) {
+    sel.innerHTML = '';
+    var byCat = {};
+    FIN.list().forEach(function (f) { (byCat[f.category] = byCat[f.category] || []).push(f); });
+    FINCATS.forEach(function (cat) {
+      if (!byCat[cat]) return;
+      var og = document.createElement('optgroup'); og.label = cat;
+      byCat[cat].forEach(function (f) { var o = document.createElement('option'); o.value = f.id; o.textContent = f.label; og.appendChild(o); });
+      sel.appendChild(og);
+    });
+    sel.value = current;
+  }
+  // colours + mini sliders + opacity + a blend badge, generated from the schema
+  function buildFinishParams(box, def, item) {
+    box.innerHTML = '';
+    if (!item.params) item.params = FIN.defaults(item.type);   // never index undefined
+    (def.params || []).forEach(function (pr) {
+      if (pr.type === 'color') {
+        var w = document.createElement('label'); w.className = 'mini-ctl'; w.title = pr.label;
+        var s = document.createElement('span'); s.textContent = pr.label;
+        var inp = document.createElement('input'); inp.type = 'color'; inp.className = 'mini-swatch'; inp.value = item.params[pr.key] || pr.def;
+        inp.addEventListener('input', function () { item.params[pr.key] = inp.value; });
+        w.appendChild(s); w.appendChild(inp); box.appendChild(w);
+      } else if (pr.type === 'glitterStyle') {
+        var w2 = document.createElement('label'); w2.className = 'mini-ctl'; w2.title = pr.label;
+        var s2 = document.createElement('span'); s2.textContent = pr.label;
+        var gsel = document.createElement('select'); gsel.className = 'mini-select';
+        GL.styleList().forEach(function (g) { var o = document.createElement('option'); o.value = g.id; o.textContent = g.label; gsel.appendChild(o); });
+        gsel.value = item.params[pr.key] || pr.def;
+        gsel.addEventListener('change', function () { item.params[pr.key] = gsel.value; });
+        w2.appendChild(s2); w2.appendChild(gsel); box.appendChild(w2);
+      } else {
+        var ms = miniSlider(pr.label, pr.min, pr.max, pr.step, item.params[pr.key] != null ? item.params[pr.key] : pr.def, pr.label);
+        ms.input.addEventListener('input', function () { item.params[pr.key] = parseFloat(ms.input.value); });
+        box.appendChild(ms.wrap);
+      }
+    });
+    var op = miniSlider('opacity', 0.1, 1, 0.05, item.alpha != null ? item.alpha : 1, 'finish opacity (blend it into the stack)');
+    op.input.addEventListener('input', function () { item.alpha = parseFloat(op.input.value); });
+    box.appendChild(op.wrap);
+    // how this finish blends onto the ones below it (base covers, screen/glow layer)
+    var bl = document.createElement('label'); bl.className = 'mini-ctl'; bl.title = 'blend mode onto the stack below';
+    var bls = document.createElement('span'); bls.textContent = 'blend';
+    var bsel = document.createElement('select'); bsel.className = 'mini-select';
+    [['base', 'base'], ['over', 'screen'], ['add', 'glow']].forEach(function (o) { var op2 = document.createElement('option'); op2.value = o[0]; op2.textContent = o[1]; bsel.appendChild(op2); });
+    bsel.value = item.blend || def.blend;
+    bsel.addEventListener('change', function () { item.blend = bsel.value; });
+    bl.appendChild(bls); bl.appendChild(bsel); box.appendChild(bl);
+  }
+  function renderFinishList() {
+    var box = $('finishList'); if (!box) return;
+    box.innerHTML = '';
+    var stack = state.textOpts.finishes;
+    stack.forEach(function (item, idx) {
+      var def = FIN.get(item.type) || FIN.get('holographic');
+      var it = document.createElement('div'); it.className = 'finish-item';
+      var head = document.createElement('div'); head.className = 'finish-head';
+      var ty = document.createElement('select'); fillFinishTypeSelect(ty, item.type);
+      var up = document.createElement('button'); up.className = 'btn tiny'; up.textContent = '↑'; up.title = 'move up';
+      var dn = document.createElement('button'); dn.className = 'btn tiny'; dn.textContent = '↓'; dn.title = 'move down';
+      var rm = document.createElement('button'); rm.className = 'btn tiny'; rm.textContent = '✕'; rm.title = 'remove';
+      head.appendChild(ty); head.appendChild(up); head.appendChild(dn); head.appendChild(rm);
+      it.appendChild(head);
+      var pbox = document.createElement('div'); pbox.className = 'finish-params'; it.appendChild(pbox);
+      box.appendChild(it);
+      buildFinishParams(pbox, def, item);
+      ty.addEventListener('change', function () {
+        item.type = ty.value; def = FIN.get(item.type); item.params = FIN.defaults(item.type);
+        buildFinishParams(pbox, def, item);
+      });
+      up.addEventListener('click', function () { if (idx > 0) swapFinish(idx, idx - 1); });
+      dn.addEventListener('click', function () { if (idx < stack.length - 1) swapFinish(idx, idx + 1); });
+      rm.addEventListener('click', function () { stack.splice(idx, 1); renderFinishList(); });
+    });
+  }
+  function swapFinish(i, j) { var a = state.textOpts.finishes, t = a[i]; a[i] = a[j]; a[j] = t; renderFinishList(); }
+  function addFinish() {
+    var has = state.textOpts.finishes.length;
+    state.textOpts.finishes.push({ type: 'holographic', params: FIN.defaults('holographic'), alpha: has ? 0.6 : 1 });
+    renderFinishList();
+  }
+
   function renderExtras() {
     if (state.mode === 'liminal') return { liminal: state.liminal };
     if (state.mode === 'text' && state.source && state.source.textRender) {
-      return { text: state.source.textRender, glitterField: state.glitterField };
+      return { text: state.source.textRender, glitterField: state.glitterField, fillTexture: state.source.fillTexture || null,
+               finishStack: state.textOpts.finishes && state.textOpts.finishes.length ? state.textOpts.finishes : null };
     }
     var o = {};
     if (state.dust) o.dust = state.dust;
@@ -323,7 +551,10 @@
   // --------------------------------------------------------------- preview
   function loop(ts) {
     if (state.source) {
-      var T = Math.max(300, (state.params.lengthSec || 2) * 1000);
+      // an animated image/GIF fill plays at its own native speed in the preview
+      var T = (state.mode === 'text' && state.source.textureTotalMs > 0)
+        ? state.source.textureTotalMs
+        : Math.max(300, (state.params.lengthSec || 2) * 1000);
       var phase = state.playing ? ((ts % T) / T) : 0;
       var cmp = state.compare && state.mode === 'image';
       var o = cmp ? {} : renderExtras();
@@ -783,6 +1014,7 @@
     $('tabImage').classList.toggle('active', state.mode === 'image');
     $('tabText').classList.toggle('active', state.mode === 'text');
     $('tabLiminal').classList.toggle('active', state.mode === 'liminal');
+    populateGlitterStyleSelect();   // tex: uploads are text-only
     updateGlitterVisibility();
   }
   function updateGlitterVisibility() {
@@ -798,6 +1030,12 @@
     $('imgCustomPalette').classList.toggle('hidden', !(cm === 'palette' && state.params.paletteId === 'mine'));
     $('textCustomPalette').classList.toggle('hidden', state.params.glitterStyle !== 'custom');
     $('dustControls').style.opacity = state.params.dust ? '1' : '0.45';
+    // a texture fill ignores density/grain (they're glitter-only) — hide them, keep strength
+    var fillIsTex = textureFor(state.params.glitterStyle) != null;
+    var dLbl = $('glitterDensity') && $('glitterDensity').closest('.ctl');
+    var gLbl = $('glitterGrain') && $('glitterGrain').closest('.ctl');
+    if (dLbl) dLbl.style.display = fillIsTex ? 'none' : '';
+    if (gLbl) gLbl.style.display = fillIsTex ? 'none' : '';
   }
 
   function syncControls() {
@@ -833,6 +1071,7 @@
     $('textBold').checked = !!t.bold; $('textItalic').checked = !!t.italic;
     $('textCaps').checked = !!t.caps;
     renderOutlineList();
+    renderFinishList();
     $('textShadow').checked = !!t.shadow;
     $('textTransparent').checked = !t.bg; setVal('textBgColor', t.bg || '#101018');
     $('textBgColor').disabled = !t.bg;
@@ -980,11 +1219,18 @@
     document.querySelectorAll('.textPalFlake').forEach(function (el) { el.addEventListener('input', onTextPal); });
 
     // glitter controls (shared by text mode + image glitter-fill)
-    populateSelect('glitterStyle', GL.styleList());
+    populateGlitterStyleSelect();
     populatePaletteSelect();
     $('glitterStyle').addEventListener('change', function () {
       state.params.glitterStyle = $('glitterStyle').value;
-      buildGlitterField(); buildDust(); updateColorUI();
+      buildGlitterField();
+      if (state.mode === 'text' && state.source && state.source.textRender) resolveTextures(state.source);
+      buildDust(); updateColorUI();
+    });
+    $('uploadFillBtn').addEventListener('click', function () { $('texFileInput').click(); });
+    $('texFileInput').addEventListener('change', function () {
+      if (this.files && this.files[0]) onTextureFile(this.files[0]);
+      this.value = '';
     });
     $('glitterDensity').addEventListener('input', function () { state.params.glitterDensity = parseFloat($('glitterDensity').value); updateAllLabels(); buildGlitterField(); });
     $('glitterIntensity').addEventListener('input', function () { state.params.glitterIntensity = parseFloat($('glitterIntensity').value); updateAllLabels(); });
@@ -1009,6 +1255,8 @@
     bindText('textAlign', 'align', 'change'); bindText('textLeading', 'leading');
     renderOutlineList();
     $('addOutlineBtn').addEventListener('click', addOutline);
+    $('addFinishBtn').addEventListener('click', addFinish);
+    renderFinishList();
     $('textTransparent').addEventListener('change', function () {
       state.textOpts.bg = $('textTransparent').checked ? null : $('textBgColor').value;
       $('textBgColor').disabled = $('textTransparent').checked;
@@ -1066,10 +1314,30 @@
     setLiminal: limSet,
     applyLiminalPreset: applyLiminalPreset,
     loadFontFromBuffer: loadFontFromBuffer,
+    loadTextureFromBuffer: loadTextureFromBuffer,
     setText: function (o) { for (var k in o) state.textOpts[k] = o[k]; syncControls(); if (state.mode === 'text') rebuildText(); },
-    setGlitter: function (o) { for (var k in o) if (o[k] != null) state.params[k] = o[k]; syncControls(); buildGlitterField(); buildDust(); },
+    setGlitter: function (o) {
+      for (var k in o) if (o[k] != null) state.params[k] = o[k];
+      syncControls(); buildGlitterField();
+      if (state.mode === 'text' && state.source && state.source.textRender) resolveTextures(state.source);
+      buildDust();
+    },
+    setFillStack: function (stack) {
+      state.textOpts.finishes = (stack || []).map(function (it) {
+        return { type: it.type, params: it.params || (FIN ? FIN.defaults(it.type) : {}), alpha: it.alpha != null ? it.alpha : 1, blend: it.blend || null };
+      });
+      renderFinishList();
+    },
     redetect: redetect,
     renderStillCanvas: function () { return EXP.renderStill(state.source, state.instances, state.params, 640, currentMatte(), renderExtras()); },
+    // render one animated frame at an explicit phase (for loop-seam tests)
+    renderAt: function (phase) {
+      var sz = EXP.fitSize(state.source.width, state.source.height, 400);
+      var cv = document.createElement('canvas'); cv.width = sz.w; cv.height = sz.h;
+      var o = renderExtras(); o.matte = currentMatte();
+      R.render(cv.getContext('2d'), state.source.drawable, state.instances, state.params, phase, o);
+      return cv;
+    },
     exportGifBytes: function () {
       return EXP.exportGIF(state.source, state.instances, state.params,
         { maxLong: 240, matte: currentMatte(), render: renderExtras(), transparent: textTransparent(), lengthSec: 1, fps: 8 }, function () {});

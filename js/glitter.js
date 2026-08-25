@@ -88,7 +88,25 @@
     sunset:   { label: 'Sunset Strip', base: [40, 10, 36], flake: 'dot',
                 palette: [[255,90,60],[255,160,50],[255,70,130],[200,80,220],[255,220,120]] },
     bubblegum:{ label: 'Bubblegum', base: [255, 218, 238], flake: 'dot', light: true,
-                palette: [[245,60,160],[250,125,190],[225,40,130],[250,165,210],[185,105,235]] }
+                palette: [[245,60,160],[250,125,190],[225,40,130],[250,165,210],[185,105,235]] },
+    // ---- the classics people keep asking for: a proper red, black, yellow ----
+    red:      { label: 'Red',       base: [96, 12, 16],   flake: 'dot',
+                palette: [[255,45,45],[225,20,40],[255,95,80],[190,0,25],[255,225,215]] },
+    // black glitter = dark grain; the white twinkle cores (Pass B) give it the
+    // "black diamond" sparkle. NOT a light-bg style.
+    black:    { label: 'Black Diamond', base: [16, 16, 20], flake: 'dot',
+                palette: [[70,72,82],[36,36,44],[120,122,134],[180,182,196],[24,24,30]] },
+    yellow:   { label: 'Yellow',    base: [140, 108, 8],  flake: 'dot',
+                palette: [[255,238,80],[255,216,32],[255,250,170],[232,190,20],[255,255,225]] },
+    // ---- a few more fun combos ----
+    blackgold:{ label: 'Black & Gold', base: [20, 16, 8], flake: 'dot',
+                palette: [[255,205,80],[224,170,50],[255,240,170],[60,60,68],[36,34,30]] },
+    emerald:  { label: 'Emerald',   base: [6, 46, 30],    flake: 'dot',
+                palette: [[16,190,120],[70,230,150],[0,150,88],[210,255,190],[240,215,120]] },
+    copper:   { label: 'Copper',    base: [92, 44, 20],   flake: 'dot',
+                palette: [[214,124,66],[255,182,120],[176,92,48],[140,70,36],[255,228,196]] },
+    oilslick: { label: 'Oil Slick', base: [12, 12, 20],   flake: 'dot', hueCycle: true,
+                palette: [[80,60,200],[40,160,180],[150,60,170],[60,180,120],[200,200,220]] }
   };
 
   function styleList() {

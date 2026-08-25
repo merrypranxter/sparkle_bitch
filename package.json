@@ -7,9 +7,11 @@
     "test:codec": "node test/codec.test.cjs",
     "test:loop": "node test/loop.test.cjs",
     "test:e2e": "node test/e2e.cjs",
-    "test": "node test/codec.test.cjs && node test/loop.test.cjs && node test/glitter.test.cjs && node test/analyze.test.cjs && node test/liminal.test.cjs && node test/e2e.cjs",
+    "test": "node test/codec.test.cjs && node test/loop.test.cjs && node test/glitter.test.cjs && node test/texture.test.cjs && node test/finishes.test.cjs && node test/analyze.test.cjs && node test/liminal.test.cjs && node test/e2e.cjs",
     "test:analyze": "node test/analyze.test.cjs",
     "test:glitter": "node test/glitter.test.cjs",
+    "test:texture": "node test/texture.test.cjs",
+    "test:finishes": "node test/finishes.test.cjs",
     "test:liminal": "node test/liminal.test.cjs"
   },
   "devDependencies": {

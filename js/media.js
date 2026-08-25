@@ -117,6 +117,30 @@
     }).catch(function (e) { URL.revokeObjectURL(url); throw e; });
   }
 
+  // Decode an uploaded image or GIF into a reusable TEXTURE for filling text /
+  // outlines: { frames:[{canvas,delay}], width, height, animated }. A GIF keeps
+  // its per-frame delays so the text can inherit its frame count on export.
+  function loadTexture(file) {
+    if (kindOf(file) === 'gif') {
+      return readArrayBuffer(file).then(function (buf) {
+        var g = SB.decodeGIF(buf);
+        var frames = g.frames.map(function (fr) {
+          return { canvas: rgbaToCanvas(fr.data, g.width, g.height), delay: fr.delay != null ? fr.delay : 100 };
+        });
+        if (!frames.length) throw new Error('GIF had no frames');
+        return { frames: frames, width: g.width, height: g.height, animated: frames.length > 1 };
+      });
+    }
+    // static image (png / jpg / webp / …) -> a single frame
+    var url = URL.createObjectURL(file);
+    return loadImage(url).then(function (img) {
+      var w = img.naturalWidth, h = img.naturalHeight;
+      var cv = createCanvas(w, h); cv.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      return { frames: [{ canvas: cv, delay: 100 }], width: w, height: h, animated: false };
+    }).catch(function (e) { URL.revokeObjectURL(url); throw e; });
+  }
+
   // Build a "source" from text options (glitter TEXT mode). Same shape as the
   // other sources, so preview/export reuse works unchanged. Background is
   // transparent so it exports as a see-through sticker.
@@ -131,6 +155,7 @@
 
   SB.media = {
     loadFromFile: loadFromFile,
+    loadTexture: loadTexture,
     makeTextSource: makeTextSource,
     rgbaToCanvas: rgbaToCanvas,
     workingImageData: workingImageData,
