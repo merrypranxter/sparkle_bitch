@@ -32,5 +32,18 @@ let outOfRange = false;
 for (let p = 0; p < 1; p += 0.0011) { const v = idx(16, p); if (v < 0 || v > 15) outOfRange = true; }
 assert(!outOfRange, '16-frame texture: index stays in [0,15] across the loop');
 
+// ---- delay-aware picker: uneven per-frame delays (preview == export) ----
+const at = SB.render.textureFrameAt;
+assert(typeof at === 'function', 'textureFrameAt is exported');
+const uneven = [{ delay: 900 }, { delay: 100 }];   // frame 0 owns 90% of the loop
+assert(at(uneven, 0) === 0 && at(uneven, 0.5) === 0 && at(uneven, 0.89) === 0, 'long frame holds across its whole delay window');
+assert(at(uneven, 0.95) === 1, 'short frame shows only in its (late) window');
+assert(at(uneven, 1) === 0, 'phase 1 wraps back to frame 0 (loop-safe)');
+// uniform delays, sampled at each frame's midpoint, match the even index
+const uni = [{ delay: 80 }, { delay: 80 }, { delay: 80 }, { delay: 80 }];
+let okUni = true; for (let k = 0; k < 4; k++) if (at(uni, (k + 0.5) / 4) !== k) okUni = false;
+assert(okUni, 'uniform delays reduce to even spacing at frame midpoints');
+assert(at([{ delay: 100 }], 0.5) === 0, 'single-frame texture stays on frame 0');
+
 console.log(failures === 0 ? '\nTEXTURE OK' : '\nTEXTURE FAILED (' + failures + ')');
 process.exit(failures === 0 ? 0 : 1);

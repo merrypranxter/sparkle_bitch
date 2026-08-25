@@ -137,6 +137,11 @@
     var sz = fitSize(source.width, source.height, maxLong);
     var cv = createCanvas(sz.w, sz.h), ctx = cv.getContext('2d');
     var F = source.textureFrames, delays = source.textureDelays || [];
+    // cumulative delay timeline: each output frame's phase lands at the MIDPOINT of
+    // its source frame's delay window, so the delay-aware preview picker selects the
+    // same frame k (with uneven delays too) and preview == export.
+    var total = 0, cum = new Array(F), j;
+    for (j = 0; j < F; j++) { cum[j] = total; total += (delays[j] != null ? delays[j] : 100); }
     var frames = [], k = 0;
 
     function step() {
@@ -150,9 +155,10 @@
           onProgress(1, 'done'); return bytes;
         });
       }
-      // phase = k/F makes the driver texture show exactly its frame k (floor(k/F*F)=k)
-      SB.render.render(ctx, source.drawable, instances, params, k / F, frameOpts({ matte: matte }, opts.render));
-      frames.push({ data: ctx.getImageData(0, 0, sz.w, sz.h).data, delay: delays[k] != null ? delays[k] : 100 });
+      var dk = delays[k] != null ? delays[k] : 100;
+      var phase = total > 0 ? (cum[k] + dk / 2) / total : k / F;
+      SB.render.render(ctx, source.drawable, instances, params, phase, frameOpts({ matte: matte }, opts.render));
+      frames.push({ data: ctx.getImageData(0, 0, sz.w, sz.h).data, delay: dk });
       k++; onProgress((k / F) * 0.9, 'rendering');
       return nextTick().then(step);
     }

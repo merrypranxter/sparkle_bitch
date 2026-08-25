@@ -241,8 +241,10 @@
     var cur = state.params.glitterStyle;
     sel.innerHTML = '';
     GL.styleList().forEach(function (s) { var o = document.createElement('option'); o.value = s.id; o.textContent = s.label; sel.appendChild(o); });
+    // uploaded textures are a TEXT-mode fill; don't offer them to the image
+    // glitter-fill, where GL.buildField doesn't understand a tex: id (silver).
     var tex = textureOptions();
-    if (tex.length) {
+    if (tex.length && state.mode === 'text') {
       var tg = document.createElement('optgroup'); tg.label = 'Your uploads';
       tex.forEach(function (t) { var o = document.createElement('option'); o.value = t.id; o.textContent = t.label; tg.appendChild(o); });
       sel.appendChild(tg);
@@ -1012,6 +1014,7 @@
     $('tabImage').classList.toggle('active', state.mode === 'image');
     $('tabText').classList.toggle('active', state.mode === 'text');
     $('tabLiminal').classList.toggle('active', state.mode === 'liminal');
+    populateGlitterStyleSelect();   // tex: uploads are text-only
     updateGlitterVisibility();
   }
   function updateGlitterVisibility() {

@@ -106,12 +106,26 @@
     var i = Math.floor(phase01 * n) % n;
     return i < 0 ? i + n : i;
   }
+  // Delay-aware frame pick: map phase through the CUMULATIVE per-frame delays so
+  // a GIF with uneven delays previews at its true timing (and matches the export,
+  // which drives each frame's phase to the midpoint of its delay window). Falls
+  // back to even spacing when delays are absent/zero.
+  function textureFrameAt(frames, phase01) {
+    var n = frames.length; if (n <= 1) return 0;
+    var total = 0, i, d;
+    for (i = 0; i < n; i++) { d = frames[i].delay; total += (d != null ? d : 100); }
+    if (total <= 0) return textureFrameIndex(n, phase01);
+    var p = phase01 % 1; if (p < 0) p += 1;
+    var t = p * total, acc = 0;
+    for (i = 0; i < n; i++) { d = frames[i].delay; acc += (d != null ? d : 100); if (t < acc) return i; }
+    return n - 1;
+  }
   // fill a white mask with one frame of an uploaded image/GIF, Cover-fit (scale to
   // fill W×H, centre-crop the overflow), composited at `alpha`.
   function paintTextureMasked(ctx, texture, mask, phase01, still, alpha) {
     var W = ctx.canvas.width, H = ctx.canvas.height;
-    var frames = texture.frames, n = frames.length;
-    var src = frames[still ? 0 : textureFrameIndex(n, phase01)].canvas;
+    var frames = texture.frames;
+    var src = frames[still ? 0 : textureFrameAt(frames, phase01)].canvas;
     var sw = src.width || 1, sh = src.height || 1;
     var scale = Math.max(W / sw, H / sh);            // cover
     var dw = sw * scale, dh = sh * scale, dx = (W - dw) / 2, dy = (H - dh) / 2;
@@ -242,7 +256,7 @@
     if (opts.glitterField && opts.glitterOnImage) glitterOverlay(ctx, opts.glitterField, params, phase01, opts);
   }
 
-  SB.render = { render: render, stateOf: stateOf, driftOffset: driftOffset, textureFrameIndex: textureFrameIndex };
+  SB.render = { render: render, stateOf: stateOf, driftOffset: driftOffset, textureFrameIndex: textureFrameIndex, textureFrameAt: textureFrameAt };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SB;
 })(typeof window !== 'undefined' ? window : globalThis);
