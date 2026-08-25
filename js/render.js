@@ -68,10 +68,10 @@
   // glitter fields for outline styles are cached (normalised, so one per
   // style/size/density/seed works at any output resolution).
   var _fields = {};
-  function fieldFor(style, w, h, params) {
-    var d = params.glitterDensity != null ? params.glitterDensity : 0.6;
-    var s = params.seed != null ? params.seed : 1234;
-    var g = params.glitterGrain != null ? params.glitterGrain : 1;
+  function fieldFor(style, w, h, density, grain, seed) {
+    var d = density != null ? density : 0.6;
+    var s = seed != null ? seed : 1234;
+    var g = grain != null ? grain : 1;
     var key = style + '|' + w + '|' + h + '|' + d + '|' + s + '|' + g;
     if (!_fields[key]) {
       if (Object.keys(_fields).length > 48) _fields = {};
@@ -98,24 +98,59 @@
     ctx.drawImage(t, 0, 0);
   }
 
+  // PURE: which source frame a texture shows at a loop phase. floor(phase*n)%n
+  // walks 0..n-1 exactly once across phase [0,1) and wraps to 0 at phase 1, so a
+  // texture-filled letter loops as cleanly as the glitter does.
+  function textureFrameIndex(n, phase01) {
+    if (!n || n <= 1) return 0;
+    var i = Math.floor(phase01 * n) % n;
+    return i < 0 ? i + n : i;
+  }
+  // fill a white mask with one frame of an uploaded image/GIF, Cover-fit (scale to
+  // fill W×H, centre-crop the overflow), composited at `alpha`.
+  function paintTextureMasked(ctx, texture, mask, phase01, still, alpha) {
+    var W = ctx.canvas.width, H = ctx.canvas.height;
+    var frames = texture.frames, n = frames.length;
+    var src = frames[still ? 0 : textureFrameIndex(n, phase01)].canvas;
+    var sw = src.width || 1, sh = src.height || 1;
+    var scale = Math.max(W / sw, H / sh);            // cover
+    var dw = sw * scale, dh = sh * scale, dx = (W - dw) / 2, dy = (H - dh) / 2;
+    var t = textLayerFor(W, H), tc = t.getContext('2d');
+    tc.setTransform(1, 0, 0, 1, 0, 0); tc.globalCompositeOperation = 'source-over'; tc.globalAlpha = 1; tc.filter = 'none';
+    tc.clearRect(0, 0, W, H);
+    tc.drawImage(src, dx, dy, dw, dh);
+    tc.globalCompositeOperation = 'destination-in'; tc.drawImage(mask, 0, 0, W, H);
+    ctx.save(); ctx.globalAlpha = U.clamp(alpha, 0, 1); ctx.drawImage(t, 0, 0); ctx.restore();
+  }
+
   // ---- glitter text ----------------------------------------------------
   function renderText(ctx, tr, mainField, params, phase01, opts) {
     var W = ctx.canvas.width, H = ctx.canvas.height, still = !!opts.still;
-    var alpha = params.glitterIntensity != null ? params.glitterIntensity : 1;
+    var fillAlpha = params.glitterIntensity != null ? params.glitterIntensity : 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
     ctx.clearRect(0, 0, W, H);
     if (opts.matte) { ctx.fillStyle = opts.matte; ctx.fillRect(0, 0, W, H); }
     if (tr.shadowCanvas) ctx.drawImage(tr.shadowCanvas, 0, 0, W, H);
-    // outline layers, OUTERMOST first (inner bands overdraw on top)
+    // outline layers, OUTERMOST first (inner bands overdraw on top). Each glitter
+    // outline uses its OWN density/grain/strength when set, else the fill's.
     var layers = tr.layers || [];
     for (var k = layers.length - 1; k >= 0; k--) {
       var L = layers[k];
-      if (L.kind === 'glitter') paintGlitterMasked(ctx, fieldFor(L.glitter, W, H, params), L.mask, phase01, still, alpha);
-      else paintColorMasked(ctx, L.mask, L.color || '#000000');
+      if (L.kind === 'texture' && L.texture) {
+        paintTextureMasked(ctx, L.texture, L.mask, phase01, still, L.intensity != null ? L.intensity : fillAlpha);
+      } else if (L.kind === 'glitter') {
+        var d = L.density != null ? L.density : params.glitterDensity;
+        var g = L.grain != null ? L.grain : params.glitterGrain;
+        var a = L.intensity != null ? L.intensity : fillAlpha;
+        paintGlitterMasked(ctx, fieldFor(L.glitter, W, H, d, g, params.seed), L.mask, phase01, still, a);
+      } else {
+        paintColorMasked(ctx, L.mask, L.color || '#000000');
+      }
     }
-    // the glitter letter fill, on top
-    paintGlitterMasked(ctx, mainField, tr.maskCanvas, phase01, still, alpha);
+    // the letter fill, on top: an uploaded texture if set, else the glitter field
+    if (opts.fillTexture) paintTextureMasked(ctx, opts.fillTexture, tr.maskCanvas, phase01, still, fillAlpha);
+    else if (mainField) paintGlitterMasked(ctx, mainField, tr.maskCanvas, phase01, still, fillAlpha);
   }
 
   // ---- glitter overlay on an image -------------------------------------
@@ -156,7 +191,7 @@
     var W = ctx.canvas.width, H = ctx.canvas.height, still = !!opts.still;
 
     // ---- TEXT MODE ----
-    if (opts.text && opts.glitterField) { renderText(ctx, opts.text, opts.glitterField, params, phase01, opts); return; }
+    if (opts.text && (opts.glitterField || opts.fillTexture)) { renderText(ctx, opts.text, opts.glitterField, params, phase01, opts); return; }
 
     // ---- LIMINAL MODE — hand the whole frame to the Liminal Engine ----
     if (opts.liminal && SB.liminal) {
@@ -201,7 +236,7 @@
     if (opts.glitterField && opts.glitterOnImage) glitterOverlay(ctx, opts.glitterField, params, phase01, opts);
   }
 
-  SB.render = { render: render, stateOf: stateOf, driftOffset: driftOffset };
+  SB.render = { render: render, stateOf: stateOf, driftOffset: driftOffset, textureFrameIndex: textureFrameIndex };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SB;
 })(typeof window !== 'undefined' ? window : globalThis);

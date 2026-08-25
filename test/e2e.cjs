@@ -418,6 +418,91 @@ async function poll(page, fn, timeout, label) {
     });
     ok(lightCheck, 'glitter: light styles have light bases + NO invisible white flakes');
 
+    // ---- NEW COLOURS: red / black / yellow render as themselves ----
+    const newcols = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text'); S.setText({ text: 'RGB', size: 96, shadow: false, outlines: [] });
+      function stat(style) {
+        S.setGlitter({ glitterStyle: style, glitterIntensity: 1, glitterDensity: 1, glitterGrain: 1, seed: 7 });
+        var cv = S.renderStillCanvas(), d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        var opaque = 0, r = 0, g = 0, b = 0, lit = 0;
+        for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 180) {
+          opaque++; r += d[i]; g += d[i + 1]; b += d[i + 2];
+          if (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 150) lit++;
+        }
+        return { opaque: opaque, r: r / opaque | 0, g: g / opaque | 0, b: b / opaque | 0, lit: lit };
+      }
+      return { red: stat('red'), yellow: stat('yellow'), black: stat('black') };
+    });
+    ok(newcols.red.opaque > 200 && newcols.red.r > newcols.red.b + 25 && newcols.red.r > newcols.red.g + 20,
+      'colours: red glitter reads red (' + newcols.red.r + ',' + newcols.red.g + ',' + newcols.red.b + ')');
+    ok(newcols.yellow.opaque > 200 && newcols.yellow.r > 150 && newcols.yellow.g > 150 && newcols.yellow.b < newcols.yellow.g - 20,
+      'colours: yellow glitter reads yellow (' + newcols.yellow.r + ',' + newcols.yellow.g + ',' + newcols.yellow.b + ')');
+    ok(newcols.black.opaque > 200 && newcols.black.lit > 5,
+      'colours: black glitter fills letters and still twinkles (' + newcols.black.lit + ' bright px)');
+
+    // ---- PER-OUTLINE GLITTER: strength/density/grain independent of the fill ----
+    const perOut = await page.evaluate(() => {
+      var S = window.SparkleBitch;
+      S.setMode('text');
+      // dark fill so bright pixels are dominated by the gold outline band
+      S.setGlitter({ glitterStyle: 'black', glitterIntensity: 1, glitterDensity: 1, glitterGrain: 1, seed: 1234 });
+      function gold(cv) {
+        var d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = 0;
+        for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 160 && d[i] > 150 && d[i + 1] > 110 && d[i + 2] < 130) n++;
+        return n;
+      }
+      S.setText({ text: 'O', size: 150, shadow: false,
+        outlines: [{ width: 22, kind: 'glitter', glitter: 'gold', density: 1.6, grain: 1, intensity: 1 }] });
+      var strong = gold(S.renderStillCanvas());
+      var L1 = S.state.source.textRender.layers[0];
+      // drop ONLY this outline's strength — the (black) fill is untouched
+      S.setText({ outlines: [{ width: 22, kind: 'glitter', glitter: 'gold', density: 1.6, grain: 1, intensity: 0.2 }] });
+      var weak = gold(S.renderStillCanvas());
+      return { strong: strong, weak: weak, density: L1.density, grain: L1.grain, intensity: L1.intensity };
+    });
+    ok(perOut.density === 1.6 && perOut.intensity === 1 && perOut.grain === 1,
+      'per-outline: the built layer carries its own density/grain/strength');
+    ok(perOut.strong > 200 && perOut.strong > perOut.weak * 1.6,
+      'per-outline: outline strength is independent of the fill (' + perOut.strong + ' -> ' + perOut.weak + ')');
+
+    // ---- UPLOAD FILL: an N-frame GIF fills the text and drives N output frames ----
+    const texFill = await page.evaluate(async () => {
+      var S = window.SparkleBitch;
+      // synthesize a 10-frame GIF fixture in-page
+      var W = 48, H = 48, N = 10, frames = [];
+      for (var f = 0; f < N; f++) {
+        var d = new Uint8ClampedArray(W * H * 4);
+        for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+          var p = (y * W + x) * 4; d[p] = (f * 25) & 255; d[p + 1] = (x * 5) & 255; d[p + 2] = (y * 5) & 255; d[p + 3] = 255;
+        }
+        frames.push({ data: d, delay: 80 });
+      }
+      var bytes = SB.encodeGIF(frames, { width: W, height: H, loop: 0 });
+      var id = await S.loadTextureFromBuffer(bytes, true, 'mygif');
+      S.setMode('text');
+      S.setText({ text: 'GIF', size: 130, shadow: false, outlines: [] });
+      S.setGlitter({ glitterStyle: 'tex:' + id });
+      var src = S.state.source;
+      var cv = S.renderStillCanvas(), d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      var opaque = 0, transparent = 0;
+      for (var i = 0; i < d.length; i += 4) { if (d[i + 3] > 200) opaque++; else if (d[i + 3] < 8) transparent++; }
+      var u8 = new Uint8Array(await S.exportGifBytes());
+      var dec = SB.decodeGIF(u8), hasT = false, f0 = dec.frames[0].data;
+      for (var j = 0; j < f0.length; j += 4) { if (f0[j + 3] < 8) { hasT = true; break; } }
+      return {
+        frames: src.textureFrames, delaysLen: (src.textureDelays || []).length, delay0: (src.textureDelays || [])[0],
+        opaque: opaque, transparent: transparent, outFrames: dec.frames.length, hasT: hasT,
+        pickerHasUpload: !!document.querySelector('#glitterStyle optgroup[label="Your uploads"]')
+      };
+    });
+    ok(texFill.frames === 10 && texFill.delaysLen === 10, 'upload: 10-frame GIF fill -> textureFrames = 10');
+    ok(texFill.opaque > 200, 'upload: the image fills the letterforms (' + texFill.opaque + ' px)');
+    ok(texFill.transparent > 0, 'upload: transparent background preserved');
+    ok(texFill.outFrames === 10, 'upload: export is one frame per GIF frame — 16→16 (' + texFill.outFrames + ')');
+    ok(texFill.delay0 === 80 && texFill.hasT, 'upload: export honours the GIF frame delays + transparency');
+    ok(texFill.pickerHasUpload, 'upload: the texture appears in the Style picker');
+
     // ---- IMAGE PLACEMENT: detection modes / weights / trace / scatter ----
     await page.evaluate(async () => {
       var W = 240, H = 180, c = document.createElement('canvas'); c.width = W; c.height = H;

@@ -9,11 +9,15 @@ modes:
   and (optionally) lays animated glitter over the photo.
 - **Text:** type words (multi-line, with left/center/right align + line-spacing)
   and get **animated glitter text** — letterforms filled with shimmering "dry
-  glitter" in 33 styles (rainbow, confetti, all-neon, unicorn, galaxy, fire…
-  plus light-background sets, all-pink/all-blue/all-purple/all-green monochrome
-  sets, and more), on a transparent background so you can paste it anywhere.
-  Set line-spacing AND letter-spacing, flip on ALL CAPS, and add **stackable
-  outlines**, each its own solid colour *or* its own glitter.
+  glitter" in 40 styles (rainbow, confetti, all-neon, unicorn, galaxy, fire, a
+  proper **red / black / yellow**, black-&-gold, oil-slick… plus
+  light-background and all-pink/all-blue/all-purple/all-green monochrome sets),
+  on a transparent background so you can paste it anywhere. Or **fill the letters
+  with your own uploaded image or GIF** — and an animated GIF's frame count
+  becomes the text's frame count (a 16-frame GIF → 16-frame text). Set
+  line-spacing AND letter-spacing, flip on ALL CAPS, and add **stackable
+  outlines** — each its own solid colour, its own glitter (with its own grain /
+  density / strength, independent of the fill), or its own uploaded image/GIF.
 
 Everything exports as a **PNG**, **animated GIF**, or **video**.
 
@@ -50,6 +54,8 @@ Then:
 | **Shapes** | Stars / sparkles / hearts / icons / mixed |
 | **Colors** | From photo (inherit local colour) · Palette · White |
 | **Grain size** | (glitter styles) flake size — down to 0.2× for extra-fine glitter dust |
+| **Per-outline glitter** | Each glitter **outline** has its own density / grain / strength sliders, independent of the fill (what works for the fill rarely works for a thin outline) |
+| **＋ Upload image/GIF fill** | Use your own picture or GIF as the letter (or outline) fill; an animated GIF's frames set the text's animation length |
 
 **Advanced** (tucked away) adds Glitterboo-style placement tools:
 
@@ -125,14 +131,15 @@ A workflow is already included (`.github/workflows/pages.yml`). One-time setup:
 ## Develop / test
 
 ```bash
-# codec round-trip, animation + glitter loop-closure (Node, no deps)
+# codec round-trip, animation + glitter/texture loop-closure (Node, no deps)
 node test/codec.test.cjs
 node test/loop.test.cjs
-node test/glitter.test.cjs
+node test/glitter.test.cjs   # 40 styles all loop-close (incl. red/black/yellow)
+node test/texture.test.cjs   # uploaded-GIF-fill frame picker is loop-safe
 
-# end-to-end in a real browser
+# everything, incl. the browser e2e (needs a Chromium)
 npm install          # dev-only: installs playwright-core (NO bundled browser)
-node test/e2e.cjs    # needs a Chromium; set CHROMIUM_PATH=/path/to/chrome
+npm test             # or: node test/e2e.cjs — set CHROMIUM_PATH=/path/to/chrome
 ```
 
 The e2e/demo scripts need a Chromium binary. In this project's environment one
@@ -150,7 +157,7 @@ css/style.css   styling              js/sparkles.js   instances + sprites
 js/util.js      rng / colour maths   js/render.js     per-frame compositing
 js/anim.js      loop-closure maths   js/glitter.js    dry-glitter flake engine
 js/presets.js   Classic / Astral     js/text.js       glitter-text letterforms
-js/media.js     load image/gif/text  js/gif-encode.js GIF89a encoder (+alpha)
+js/media.js     load img/gif/txt/tex  js/gif-encode.js GIF89a encoder (+alpha)
 js/export.js    PNG / GIF / video     js/gif-decode.js GIF decoder
 js/main.js      UI + controller
 ```

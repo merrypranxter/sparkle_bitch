@@ -125,6 +125,52 @@ function waitServer() {
     { width: 6, kind: 'color', color: '#4fe3ff' }
   ]);
 
+  // ---- NEW colours: a proper red, black and yellow ----
+  await textDemo('text-red', 'RED HOT', 'red', '#0b0713', 'arialblack');
+  await textDemo('text-yellow', 'sunshine', 'yellow', '#0b0713', 'fredoka');
+  await textDemo('text-black', 'BLACK ✦', 'black', '#f2ecf6', 'arialblack');   // black glitter reads on a light bg
+
+  // ---- PER-OUTLINE glitter: fine dense silver fill + a chunky, low-density gold outline ----
+  await textDemo('text-peroutline', 'outline', 'silver', '#0b0713', 'bungee', [
+    { width: 13, kind: 'glitter', glitter: 'gold', density: 0.5, grain: 1.8, intensity: 1 }
+  ]);
+
+  // ---- UPLOAD FILL: an animated GIF is the fill; its 12 frames drive the text ----
+  await page.evaluate(async () => {
+    var S = window.SparkleBitch;
+    var W = 96, H = 96, N = 12, frames = [];
+    for (var f = 0; f < N; f++) {
+      var d = new Uint8ClampedArray(W * H * 4);
+      for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+        var p = (y * W + x) * 4;
+        var rgb = SB.util.hslToRgb(((x + f * (W / N)) / W) * 360, 1, 0.55);
+        d[p] = rgb[0]; d[p + 1] = rgb[1]; d[p + 2] = rgb[2]; d[p + 3] = 255;
+      }
+      frames.push({ data: d, delay: 90 });
+    }
+    var bytes = SB.encodeGIF(frames, { width: W, height: H, loop: 0 });
+    var id = await S.loadTextureFromBuffer(bytes, true, 'rainbow-shimmer');
+    S.setMode('text');
+    S.setText({ text: 'SHINY', size: 130, font: 'arialblack', bold: true, shadow: true, bg: null,
+      outlines: [{ width: 8, kind: 'color', color: '#20112e' }] });
+    S.setGlitter({ glitterStyle: 'tex:' + id });
+  });
+  await page.waitForFunction(() => window.SparkleBitch.state.source && window.SparkleBitch.state.source.textureFrames === 12, { timeout: 5000 });
+  await sleep(400);
+  const giffill = await page.evaluate(async () => {
+    var st = window.SparkleBitch.state;
+    var gif = await SB.exporter.exportGIF(st.source, st.instances, st.params, {
+      maxLong: 600, matte: undefined,
+      render: { text: st.source.textRender, glitterField: st.glitterField, fillTexture: st.source.fillTexture },
+      transparent: true
+    }, function () {});
+    var b = '', u8 = new Uint8Array(gif);
+    for (var i = 0; i < u8.length; i++) b += String.fromCharCode(u8[i]);
+    return { gif: btoa(b), frames: SB.decodeGIF(u8).frames.length };
+  });
+  fs.writeFileSync(path.join(DEMO, 'text-giffill.gif'), Buffer.from(giffill.gif, 'base64'));
+  console.log('wrote demo/text-giffill.gif (' + ((fs.statSync(path.join(DEMO, 'text-giffill.gif')).size / 1024) | 0) + ' KB, ' + giffill.frames + ' frames)');
+
   await browser.close();
   server.kill('SIGTERM');
   console.log('demo done');

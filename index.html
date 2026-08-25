@@ -434,6 +434,10 @@
       <div id="glitterGroup" class="group hidden">
         <div class="group-title">✨ Glitter</div>
         <label class="ctl"><span>Style</span><select id="glitterStyle"></select></label>
+        <div class="tool-row">
+          <button id="uploadFillBtn" class="btn tiny">＋ Upload image/GIF fill</button>
+          <span class="hint">use a pic or GIF as the fill — a GIF's frames set the animation length</span>
+        </div>
         <div id="textCustomPalette" class="palette-editor hidden">
           <span class="hint">My palette — base + flakes:</span>
           <div class="swatches">
@@ -496,6 +500,7 @@
 
   <input id="fileInput" type="file" accept="image/*,video/*" hidden />
   <input id="fontFileInput" type="file" accept=".ttf,.otf,.woff,.woff2,font/*" hidden />
+  <input id="texFileInput" type="file" accept="image/*,.gif" hidden />
 
   <!-- engine (classic scripts so it runs straight from file://) -->
   <script src="js/util.js"></script>
