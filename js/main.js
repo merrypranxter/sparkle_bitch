@@ -864,6 +864,8 @@
     if (!look) return;
     for (var k in look) if (look.hasOwnProperty(k)) state.params[k] = look[k];
     syncControls(); redetect(); buildGlitterField();
+    // a texture-backed look changes glitterStyle -> re-resolve the fill texture now
+    if (state.mode === 'text' && state.source && state.source.textRender) resolveTextures(state.source);
     setStatus('Look “' + name + '” applied ✨');
   }
 

@@ -257,11 +257,16 @@
     for (var k = 0; k < highlights; k++) {
       var cyc = k + 1;                                 // integer revs -> loop-safe
       var yy = ((ph * cyc + k / highlights) % 1) * h;
-      var band = g.createLinearGradient(0, yy - h * 0.12, 0, yy + h * 0.12);
-      band.addColorStop(0, 'rgba(255,255,255,0)'); band.addColorStop(0.5, 'rgba(255,255,255,0.85)'); band.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = band;
-      if (ooze) { g.save(); g.translate(Math.sin(ph * TAU + k) * w * 0.05, 0); g.fillRect(0, 0, w, h); g.restore(); }
-      else g.fillRect(0, 0, w, h);
+      var ox = ooze ? Math.sin(ph * TAU + k) * w * 0.05 : 0;   // 1 rev -> loop-safe
+      // draw the band plus wrapped copies at ±h so it stays periodic across the
+      // loop seam — the highlight leaves the bottom and re-enters the top smoothly
+      for (var wc = -1; wc <= 1; wc++) {
+        var cy = yy + wc * h;
+        var band = g.createLinearGradient(0, cy - h * 0.12, 0, cy + h * 0.12);
+        band.addColorStop(0, 'rgba(255,255,255,0)'); band.addColorStop(0.5, 'rgba(255,255,255,0.85)'); band.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = band;
+        g.save(); if (ox) g.translate(ox, 0); g.fillRect(0, 0, w, h); g.restore();
+      }
     }
     g.globalCompositeOperation = 'source-over';
   }
